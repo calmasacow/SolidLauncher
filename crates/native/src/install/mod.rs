@@ -20,6 +20,10 @@ use solid_launcher_core::{parse_version, PackageKind};
 // Windows installs through these. They are also compiled under `cfg(test)` everywhere, so
 // the zip-slip guard and the layout rules are covered by the suite wherever it runs rather
 // than only on a Windows runner.
+// macOS reads the installed version out of the bundle; the reader is covered by the
+// suite everywhere for the same reason.
+#[cfg(any(target_os = "macos", test))]
+mod plist;
 #[cfg(any(windows, test))]
 mod portable;
 #[cfg(any(windows, test))]
