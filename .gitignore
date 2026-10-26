@@ -1,4 +1,7 @@
 /target
+# Every other cargo target dir too. A cross-compile run uses its own (target-cross,
+# target-<triple>), and 700 MB of .rlib files must never be committable again.
+/target*
 /dist
 **/*.rs.bk
 
