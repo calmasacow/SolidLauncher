@@ -1,18 +1,27 @@
 #!/bin/sh
-# Pack a Linux release of SolidLauncher.
+# Pack a Linux or FreeBSD release of SolidLauncher.
 #
-# Usage: packaging/linux/package.sh <version> <arch> <binary>
-# Writes dist/solid-launcher-<version>-linux-<arch>.tar.gz
+# Usage: packaging/unix/package.sh <version> <os> <arch> <binary>
+# Writes dist/solid-launcher-<version>-<os>-<arch>.tar.gz
 # The archive unpacks into ~/.local with --strip-components=1.
+#
+# Linux and the BSDs share this layout: the same XDG tree under the home directory, so one
+# script serves both. Icons are rendered on the packaging host, which is always Linux.
 set -eu
 
 version=$1
-arch=$2
-binary=$3
+os=$2
+arch=$3
+binary=$4
+
+case "$os" in
+    linux | freebsd) ;;
+    *) echo "unknown os: $os (expected linux or freebsd)" >&2; exit 2 ;;
+esac
 
 cd "$(dirname "$0")/../.."
 
-name="solid-launcher-${version}-linux-${arch}"
+name="solid-launcher-${version}-${os}-${arch}"
 stage="dist/${name}"
 
 rm -rf "$stage"
@@ -25,8 +34,9 @@ mkdir -p \
     "$stage/share/icons/hicolor/256x256/apps"
 
 install -m 755 "$binary" "$stage/bin/solid-launcher"
-strip --strip-unneeded "$stage/bin/solid-launcher"
-install -m 644 packaging/linux/solid-launcher.desktop \
+# A cross-built or FreeBSD binary is stripped where it was built; host strip may not know it.
+strip --strip-unneeded "$stage/bin/solid-launcher" 2>/dev/null || true
+install -m 644 packaging/unix/solid-launcher.desktop \
     "$stage/share/applications/solid-launcher.desktop"
 
 for size in 48 64 128 256; do
