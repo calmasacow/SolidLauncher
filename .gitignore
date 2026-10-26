@@ -1,0 +1,9 @@
+/target
+/dist
+**/*.rs.bk
+
+# Working files that are not part of the launcher.
+omafont-*.pkg.tar.zst
+*.psd
+/SolidCraftLauncher_BG.png
+/SolidCraftLauncher_mockup.png

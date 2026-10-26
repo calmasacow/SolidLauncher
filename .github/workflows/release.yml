@@ -1,0 +1,94 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.arch }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.target }}
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libxkbcommon-dev \
+            librsvg2-bin \
+            binutils
+      - name: Version
+        id: ver
+        run: |
+          cargo_ver=$(awk -F'"' '/^version = / { print $2; exit }' Cargo.toml)
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            if [ "$tag" != "$cargo_ver" ]; then
+              echo "tag v$tag does not match Cargo.toml version $cargo_ver" >&2
+              exit 1
+            fi
+          fi
+          echo "version=$cargo_ver" >> "$GITHUB_OUTPUT"
+      - name: Test
+        run: cargo test --workspace --locked --all-targets
+      - name: Build
+        run: cargo build --release --locked -p solid-launcher --target ${{ matrix.target }}
+      - name: Package
+        run: packaging/linux/package.sh "${{ steps.ver.outputs.version }}" "${{ matrix.arch }}" "target/${{ matrix.target }}/release/solid-launcher"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solid-launcher-${{ steps.ver.outputs.version }}-linux-${{ matrix.arch }}
+          path: dist/solid-launcher-*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Publish
+    needs: linux
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          cd dist
+          sha256sum solid-launcher-*.tar.gz > SHA256SUMS.txt
+          notes=$(mktemp)
+          sed "s/@VERSION@/${version}/g" "$GITHUB_WORKSPACE/packaging/linux/install.md" > "$notes"
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "SolidLauncher ${version}" \
+            --generate-notes \
+            --notes "$(cat "$notes")" \
+            solid-launcher-*.tar.gz \
+            SHA256SUMS.txt

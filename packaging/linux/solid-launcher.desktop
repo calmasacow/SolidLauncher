@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=SolidLauncher
+Comment=Install, update and open SolidCraft
+Exec=solid-launcher
+Icon=solid-launcher
+Terminal=false
+StartupNotify=false
+Categories=Utility;
+StartupWMClass=solid-launcher
