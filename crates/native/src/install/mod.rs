@@ -17,6 +17,14 @@ use std::path::{Path, PathBuf};
 use semver::Version;
 use solid_launcher_core::{parse_version, PackageKind};
 
+// Windows installs through these. They are also compiled under `cfg(test)` everywhere, so
+// the zip-slip guard and the layout rules are covered by the suite wherever it runs rather
+// than only on a Windows runner.
+#[cfg(any(windows, test))]
+mod portable;
+#[cfg(any(windows, test))]
+mod zip;
+
 #[cfg(any(
     target_os = "linux",
     target_os = "freebsd",
@@ -81,12 +89,17 @@ pub fn detect(home: &Path) -> Option<Installed> {
 ///
 /// `archive` has already been checked against the SHA-256 the release published. A backend
 /// refuses a `kind` it does not install rather than guessing.
+///
+/// `version` is the one the release carries. A backend that can read the version back off
+/// what it installed prefers that, because it describes the files actually on disk; one
+/// that cannot, such as an MSI install, records this instead.
 pub fn install_archive(
     archive: &Path,
     home: &Path,
     kind: PackageKind,
+    version: &Version,
 ) -> Result<Installed, String> {
-    backend::install_archive(archive, home, kind)
+    backend::install_archive(archive, home, kind, version)
 }
 
 pub fn launch(binary: &Path) -> Result<(), String> {

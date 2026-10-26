@@ -26,6 +26,7 @@ pub(super) fn install_archive(
     _archive: &Path,
     _home: &Path,
     _kind: PackageKind,
+    _version: &semver::Version,
 ) -> Result<Installed, String> {
     Err(TODO.to_string())
 }

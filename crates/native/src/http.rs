@@ -70,6 +70,11 @@ pub fn install_latest(progress: impl Fn(u64, u64)) -> Result<Installed, String> 
     let home = install::home_dir()?;
     let release = fetch_latest()?;
     let (asset, kind) = choose(&release)?;
+    // `fetch_latest` refuses a release whose tag is not a version, so this is always set.
+    let version = release
+        .version
+        .clone()
+        .ok_or_else(|| format!("release tag {} is not a version", release.tag))?;
     let sha = asset
         .sha256
         .clone()
@@ -88,7 +93,7 @@ pub fn install_latest(progress: impl Fn(u64, u64)) -> Result<Installed, String> 
         .map_err(|err| format!("could not create the download folder ({err})"))?;
     let dest = cache.join(&asset.name);
     download(&asset.url, &dest, &sha, asset.size, &progress)?;
-    install::install_archive(&dest, &home, kind)
+    install::install_archive(&dest, &home, kind, &version)
 }
 
 fn choose(release: &Release) -> Result<(&solid_launcher_core::Asset, PackageKind), String> {
