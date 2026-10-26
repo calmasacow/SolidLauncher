@@ -76,10 +76,19 @@
                     Advertise="yes" />
         </File>
       </Component>
-      <Component Id="Licences" Guid="*">
-        <File Id="LicenceMit" Source="$(var.SourceRoot)\LICENSE-MIT" />
-        <File Id="LicenceApache" Source="$(var.SourceRoot)\LICENSE-APACHE" />
-        <File Id="Attribution" Source="$(var.SourceRoot)\ATTRIBUTION.md" />
+      <!--
+        One component per licence file. An automatically generated component GUID needs a
+        single file as the component's keypath, or a versioned keypath with unversioned
+        files beside it; three plain text files in one component is neither.
+      -->
+      <Component Id="LicenceMit" Guid="*">
+        <File Id="LicenceMitFile" Source="$(var.SourceRoot)\LICENSE-MIT" KeyPath="yes" />
+      </Component>
+      <Component Id="LicenceApache" Guid="*">
+        <File Id="LicenceApacheFile" Source="$(var.SourceRoot)\LICENSE-APACHE" KeyPath="yes" />
+      </Component>
+      <Component Id="Attribution" Guid="*">
+        <File Id="AttributionFile" Source="$(var.SourceRoot)\ATTRIBUTION.md" KeyPath="yes" />
       </Component>
       <!--
         A per-user install writes its own uninstall entry, but the Start Menu folder and
@@ -111,18 +120,12 @@
     <ui:WixUI Id="WixUI_Minimal" />
     <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenceRtf)" />
 
-    <!-- Offer to start it when the installer finishes. -->
-    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Start SolidLauncher" />
-    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
-    <CustomAction Id="LaunchAfterInstall"
-                  FileRef="SolidLauncherExeFile"
-                  ExeCommand=""
-                  Return="asyncNoWait"
-                  Impersonate="yes" />
-    <InstallExecuteSequence>
-      <Custom Action="LaunchAfterInstall" After="InstallFinalize"
-              Condition="NOT Installed AND WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1" />
-    </InstallExecuteSequence>
+    <!--
+      No "start it now" checkbox on the last page. Doing that properly needs the Util
+      extension's WixShellExec, and a hand-rolled custom action that launches a program
+      from the installer is the kind of thing that works on the machine it was written on.
+      The Start Menu entry is one click away.
+    -->
 
   </Package>
 </Wix>
