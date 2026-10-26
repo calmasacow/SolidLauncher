@@ -92,6 +92,13 @@ impl Platform {
         Some(Self { os, arch })
     }
 
+    /// The `<os>-<arch>` the release names this machine's build with.
+    ///
+    /// `None` for a platform SolidCraft publishes nothing for.
+    pub fn token(self) -> Option<&'static str> {
+        self.tokens().first().copied()
+    }
+
     fn tokens(self) -> &'static [&'static str] {
         match (self.os, self.arch) {
             (Os::Windows, Arch::X64) => &["windows-x64", "windows-x86"],

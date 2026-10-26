@@ -29,6 +29,14 @@ use super::{portable, Installed, Origin, RemovedCopies};
 /// The portable layout keeps one directory per version.
 pub(super) const KEEPS_OLD_VERSIONS: bool = true;
 
+/// The format an update should use: whichever of the two was used last.
+pub(super) fn installed_kind(home: &Path) -> Option<PackageKind> {
+    match read_method(&root(home))? {
+        Method::Portable => Some(PackageKind::PortableZip),
+        Method::Msi { .. } => Some(PackageKind::Msi),
+    }
+}
+
 /// Records which of the two installs was used last: `portable` or `msi <version> <path>`.
 const METHOD: &str = "method";
 

@@ -35,11 +35,11 @@ pub struct Status {
     pub update_available: bool,
 }
 
-pub fn check_status() -> Result<Status, String> {
+pub fn check_status(preferred: Option<PackageKind>) -> Result<Status, String> {
     let home = install::home_dir()?;
     let installed = install::detect(&home);
     let release = fetch_latest()?;
-    let (asset, kind) = choose(&release)?;
+    let (asset, kind) = choose(&release, &home, preferred)?;
     if asset.sha256.is_none() {
         return Err(format!(
             "{} was published without a SHA-256 checksum",
@@ -66,10 +66,13 @@ pub fn check_status() -> Result<Status, String> {
 /// Download the latest package for this computer, verify it, and install it.
 ///
 /// `progress` is called with bytes received and the expected total (0 when unknown).
-pub fn install_latest(progress: impl Fn(u64, u64)) -> Result<Installed, String> {
+pub fn install_latest(
+    preferred: Option<PackageKind>,
+    progress: impl Fn(u64, u64),
+) -> Result<Installed, String> {
     let home = install::home_dir()?;
     let release = fetch_latest()?;
-    let (asset, kind) = choose(&release)?;
+    let (asset, kind) = choose(&release, &home, preferred)?;
     // `fetch_latest` refuses a release whose tag is not a version, so this is always set.
     let version = release
         .version
@@ -96,11 +99,30 @@ pub fn install_latest(progress: impl Fn(u64, u64)) -> Result<Installed, String> 
     install::install_archive(&dest, &home, kind, &version)
 }
 
-fn choose(release: &Release) -> Result<(&solid_launcher_core::Asset, PackageKind), String> {
+/// The asset to install, and what kind it is.
+///
+/// `preferred` is what the user chose in Options, or `None` for the automatic choice.
+/// Automatic means: whatever format is already installed, so an update does not silently
+/// change how SolidCraft is installed; and failing that, what the platform prefers.
+fn choose<'a>(
+    release: &'a Release,
+    home: &Path,
+    preferred: Option<PackageKind>,
+) -> Result<(&'a solid_launcher_core::Asset, PackageKind), String> {
     let platform =
         Platform::current().ok_or("this computer is not a supported SolidCraft platform")?;
-    pick_asset(release, platform, platform.install_kinds())
-        .ok_or_else(|| "this release has no SolidCraft build for this computer".to_string())
+    let wanted = preferred.or_else(|| install::installed_kind(home));
+    let kinds: Vec<PackageKind> = match wanted {
+        Some(kind) => vec![kind],
+        None => platform.install_kinds().to_vec(),
+    };
+    pick_asset(release, platform, &kinds).ok_or_else(|| match wanted {
+        Some(kind) => format!(
+            "this release has no {} for this computer. Choose another install method in Options.",
+            kind.label()
+        ),
+        None => "this release has no SolidCraft build for this computer".to_string(),
+    })
 }
 
 fn fetch_latest() -> Result<Release, String> {

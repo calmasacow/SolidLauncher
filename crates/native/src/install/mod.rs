@@ -27,6 +27,14 @@ use solid_launcher_core::{parse_version, PackageKind};
     target_os = "netbsd",
     target_os = "dragonfly"
 ))]
+mod appimage;
+#[cfg(any(
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly"
+))]
 mod found;
 #[cfg(any(
     target_os = "linux",
@@ -37,6 +45,14 @@ mod found;
     test
 ))]
 mod pkgquery;
+#[cfg(any(
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly"
+))]
+mod syspkg;
 
 // Windows installs through these. They are also compiled under `cfg(test)` everywhere, so
 // the zip-slip guard and the layout rules are covered by the suite wherever it runs rather
@@ -180,6 +196,22 @@ pub fn launch(installed: &Installed) -> Result<(), String> {
 /// Delete SolidCraft trees older than the one in use.
 pub fn remove_old_copies(home: &Path) -> RemovedCopies {
     backend::remove_old_copies(home)
+}
+
+/// The `<os>-<arch>` token the release names this machine's build with.
+#[allow(dead_code)]
+pub(crate) fn target_token() -> &'static str {
+    solid_launcher_core::Platform::current()
+        .and_then(|platform| platform.token())
+        .unwrap_or("unknown")
+}
+
+/// The package format an update should use, taken from what is already installed.
+///
+/// `None` when nothing is installed, or when what is installed is not this launcher's to
+/// replace. The caller then falls back to what the platform prefers.
+pub fn installed_kind(home: &Path) -> Option<PackageKind> {
+    backend::installed_kind(home)
 }
 
 /// Whether this platform keeps several versions side by side.

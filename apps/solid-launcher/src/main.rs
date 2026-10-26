@@ -51,7 +51,9 @@ fn main() -> eframe::Result<()> {
         return Ok(());
     }
     if args.iter().any(|arg| arg == "--check") {
-        match check_status() {
+        // --check runs before the window, so it reads the saved choice itself.
+        let (settings, _) = settings::Settings::load();
+        match check_status(settings.method.preferred()) {
             Ok(status) => {
                 println!(
                     "installed: {}",
@@ -323,8 +325,9 @@ impl Launcher {
     fn spawn_check(&self) {
         let tx = self.tx.clone();
         let waker = Arc::clone(&self.waker);
+        let preferred = self.settings.method.preferred();
         thread::spawn(move || {
-            let event = match check_status() {
+            let event = match check_status(preferred) {
                 Ok(status) => Event::Checked(status),
                 Err(err) => Event::Failed(err),
             };
@@ -336,10 +339,11 @@ impl Launcher {
     fn spawn_install(&self) {
         let tx = self.tx.clone();
         let waker = Arc::clone(&self.waker);
+        let preferred = self.settings.method.preferred();
         thread::spawn(move || {
             let progress_tx = tx.clone();
             let progress_waker = Arc::clone(&waker);
-            let event = match install_latest(move |received, total| {
+            let event = match install_latest(preferred, move |received, total| {
                 let _ = progress_tx.send(Event::Progress { received, total });
                 progress_waker.wake();
             }) {
@@ -478,6 +482,17 @@ impl Launcher {
         if !self.store_settings() {
             self.settings = previous;
         }
+    }
+
+    fn set_method(&mut self, method: settings::Method) {
+        let previous = self.settings.clone();
+        self.settings.method = method;
+        if !self.store_settings() {
+            self.settings = previous;
+            return;
+        }
+        // The chosen format decides which asset the next check reports, so ask again.
+        self.spawn_check();
     }
 
     fn set_remove_old_versions(&mut self, on: bool) {
@@ -866,6 +881,25 @@ fn show_options(
                     ui.label(
                         "Older SolidCraft folders in your home are removed. The one you are using stays.",
                     );
+                }
+                // Only shown where SolidCraft publishes more than one thing we can
+                // install; elsewhere the single choice is not a choice.
+                let choices = settings::Method::choices();
+                if choices.len() > 1 {
+                    ui.separator();
+                    ui.label("Install SolidCraft as");
+                    let chosen = launcher.settings.method;
+                    for method in choices {
+                        if ui
+                            .radio(chosen == *method, method.label())
+                            .on_hover_text(method.note())
+                            .clicked()
+                            && chosen != *method
+                        {
+                            launcher.set_method(*method);
+                        }
+                    }
+                    ui.label(chosen.note());
                 }
             });
         });

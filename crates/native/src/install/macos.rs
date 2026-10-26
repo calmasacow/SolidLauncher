@@ -25,6 +25,11 @@ use super::{plist, Installed, Origin, RemovedCopies};
 /// The bundle is replaced in place, so there are never older copies to sweep.
 pub(super) const KEEPS_OLD_VERSIONS: bool = false;
 
+/// The disk image is the only thing published for macOS.
+pub(super) fn installed_kind(_home: &Path) -> Option<PackageKind> {
+    Some(PackageKind::Dmg)
+}
+
 const APP: &str = "SolidCraft.app";
 /// `CFBundleExecutable` in SolidCraft's bundle.
 const EXECUTABLE: &str = "SolidCraft";

@@ -31,17 +31,88 @@ pub(super) fn install_archive(
     archive: &Path,
     home: &Path,
     kind: PackageKind,
-    // The installed directory carries the version, which describes the files on disk
-    // rather than what the release claimed, so this is not needed here.
-    _version: &semver::Version,
+    version: &semver::Version,
 ) -> Result<Installed, String> {
-    if kind != PackageKind::TarGz {
-        return Err(format!(
-            "not supported yet: installing a {} on this system. SolidLauncher installs the official tarball.",
-            kind.label()
-        ));
+    let installed = match kind {
+        // The tarball carries the whole tree: the program, the command-line tool, icons
+        // and the file associations. It is the richest install and needs no password.
+        PackageKind::TarGz => install_tarball(archive, home)?,
+        // One executable file. No password either, and nothing to unpack.
+        PackageKind::AppImage => super::appimage::install(archive, home, version)?,
+        // Written under /usr by the package manager, after a password prompt. What it
+        // leaves behind is found by asking dpkg or rpm, not by looking where we put it.
+        PackageKind::Deb | PackageKind::Rpm => {
+            super::syspkg::install(archive, kind)?;
+            return detect(home).ok_or_else(|| {
+                "the package installed, but SolidCraft was not where it was expected afterwards"
+                    .to_string()
+            });
+        }
+        other => {
+            return Err(format!(
+                "not supported yet: installing a {} on this system.",
+                other.label()
+            ))
+        }
+    };
+    // Remember the format, so an update uses the same one rather than changing it under
+    // the user. Failing to write it is not worth undoing a good install over.
+    if let Err(err) = write_method(home, kind) {
+        eprintln!("SolidLauncher: {err}");
     }
-    install_tarball(archive, home)
+    Ok(installed)
+}
+
+/// Records which format this launcher installed, beside the installs themselves.
+const METHOD: &str = ".solid-launcher-method";
+
+fn method_path(home: &Path) -> std::path::PathBuf {
+    home.join(".local/opt").join(METHOD)
+}
+
+fn write_method(home: &Path, kind: PackageKind) -> Result<(), String> {
+    let name = match kind {
+        PackageKind::TarGz => "tar",
+        PackageKind::AppImage => "appimage",
+        PackageKind::Deb => "deb",
+        PackageKind::Rpm => "rpm",
+        other => return Err(format!("no name recorded for a {}", other.label())),
+    };
+    let path = method_path(home);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("could not create {} ({err})", parent.display()))?;
+    }
+    fs::write(&path, format!("{name}\n"))
+        .map_err(|err| format!("could not record the install format ({err})"))
+}
+
+/// The format an update should use, taken from the copy that is installed.
+///
+/// `None` when there is nothing installed, or when what is installed is not ours to
+/// replace: a Flatpak is updated by Flatpak, and a `solidcraft` of unknown provenance is
+/// not something to overwrite on a guess.
+pub(super) fn installed_kind(home: &Path) -> Option<PackageKind> {
+    match detect(home)?.origin {
+        Origin::Deb => Some(PackageKind::Deb),
+        Origin::Rpm => Some(PackageKind::Rpm),
+        Origin::Flatpak | Origin::Unknown => None,
+        Origin::Launcher => Some(marker_kind(home)),
+    }
+}
+
+/// Which format this launcher last wrote. An install from before the marker existed
+/// reads as a tarball, which is what it was: nothing else was supported then.
+fn marker_kind(home: &Path) -> PackageKind {
+    match fs::read_to_string(method_path(home))
+        .unwrap_or_default()
+        .trim()
+    {
+        "appimage" => PackageKind::AppImage,
+        "deb" => PackageKind::Deb,
+        "rpm" => PackageKind::Rpm,
+        _ => PackageKind::TarGz,
+    }
 }
 
 /// The SolidCraft on this machine, whoever installed it.
@@ -51,7 +122,9 @@ pub(super) fn install_archive(
 /// managers are asked, so a copy from `apt`, `dnf` or Flathub is found rather than
 /// reported as nothing and then installed over.
 pub(super) fn detect(home: &Path) -> Option<Installed> {
-    launcher_install(home).or_else(found::system_install)
+    launcher_install(home)
+        .or_else(|| super::appimage::detect(home))
+        .or_else(found::system_install)
 }
 
 /// The copy `~/.local/bin/solidcraft` currently points at, when that link is one of ours.
@@ -364,7 +437,7 @@ fn mirror_legacy_icons(hicolor: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn write_desktop(home: &Path, binary: &Path) -> Result<(), String> {
+pub(super) fn write_desktop(home: &Path, binary: &Path) -> Result<(), String> {
     let dir = home.join(".local/share/applications");
     fs::create_dir_all(&dir)
         .map_err(|err| format!("could not create {} ({err})", dir.display()))?;
