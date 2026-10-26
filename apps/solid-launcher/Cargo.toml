@@ -1,0 +1,28 @@
+[package]
+name = "solid-launcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Install, update and open SolidCraft"
+publish = false
+
+[[bin]]
+name = "solid-launcher"
+path = "src/main.rs"
+
+[dependencies]
+eframe.workspace = true
+image = { version = "0.25", default-features = false, features = ["png"] }
+serde_json.workspace = true
+solid-launcher-native.workspace = true
+
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+tray-icon = "0.25"
+
+# Linux and the BSDs: StatusNotifierItem over D-Bus, so the bar icon needs no GTK.
+[target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))'.dependencies]
+tray-icon = { version = "0.25", default-features = false, features = ["ksni"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,20 @@
+[package]
+name = "solid-launcher-native"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Download, verify, install and launch SolidCraft"
+publish = false
+
+[dependencies]
+solid-launcher-core.workspace = true
+dirs.workspace = true
+flate2.workspace = true
+semver.workspace = true
+sha2.workspace = true
+tar.workspace = true
+ureq.workspace = true
+
+[lints]
+workspace = true
