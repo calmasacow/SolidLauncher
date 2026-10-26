@@ -24,7 +24,7 @@ use std::process::{Command, Stdio};
 use semver::Version;
 use solid_launcher_core::PackageKind;
 
-use super::{portable, Installed, RemovedCopies};
+use super::{portable, Installed, Origin, RemovedCopies};
 
 /// The portable layout keeps one directory per version.
 pub(super) const KEEPS_OLD_VERSIONS: bool = true;
@@ -54,6 +54,7 @@ pub(super) fn detect(home: &Path) -> Option<Installed> {
             version,
             root: exe.parent().map(Path::to_path_buf).unwrap_or_default(),
             binary: exe,
+            origin: Origin::Launcher,
         }),
         // No marker at all: a portable install from before this file existed still has its
         // own, so fall through to it rather than reporting nothing.
@@ -117,6 +118,7 @@ fn install_msi(archive: &Path, root: &Path, version: &Version) -> Result<Install
         version: version.clone(),
         root: exe.parent().map(Path::to_path_buf).unwrap_or_default(),
         binary: exe,
+        origin: Origin::Launcher,
     })
 }
 
@@ -170,7 +172,8 @@ fn start_menu_shortcut(binary: &Path) -> Result<(), String> {
     crate::shortcut::write_shortcut(binary, &dir.join("SolidCraft.lnk"), None)
 }
 
-pub(super) fn launch(binary: &Path) -> Result<(), String> {
+pub(super) fn launch(installed: &Installed) -> Result<(), String> {
+    let binary = &installed.binary;
     if !binary.is_file() {
         return Err("SolidCraft is not installed".to_string());
     }

@@ -17,6 +17,27 @@ use std::path::{Path, PathBuf};
 use semver::Version;
 use solid_launcher_core::{parse_version, PackageKind};
 
+// Finding a SolidCraft that something else installed. Asking the package managers needs
+// a platform that has them; reading their answers does not, so the two are separate and
+// only the reading is compiled into the suite everywhere.
+#[cfg(any(
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly"
+))]
+mod found;
+#[cfg(any(
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly",
+    test
+))]
+mod pkgquery;
+
 // Windows installs through these. They are also compiled under `cfg(test)` everywhere, so
 // the zip-slip guard and the layout rules are covered by the suite wherever it runs rather
 // than only on a Windows runner.
@@ -65,12 +86,54 @@ use windows as backend;
 #[allow(dead_code)]
 pub(crate) const MAX_UNPACKED: u64 = 1024 * 1024 * 1024;
 
+/// How the SolidCraft that is installed got onto this machine.
+///
+/// It decides how to open it, whether an update can replace it, and whether older copies
+/// are this launcher's to sweep up. A copy SolidLauncher did not install is still shown
+/// and still opened; it is just not quietly replaced or deleted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Origin {
+    /// SolidLauncher installed it, under the home directory.
+    Launcher,
+    /// A `.deb`, known to dpkg.
+    Deb,
+    /// An `.rpm`, known to rpm.
+    Rpm,
+    /// A Flatpak, which is opened through `flatpak run`.
+    Flatpak,
+    /// A `solidcraft` on `PATH` that nothing above explains: a hand-unpacked tarball, or
+    /// a build someone made themselves.
+    Unknown,
+}
+
+impl Origin {
+    /// Whether SolidLauncher may replace or delete this copy.
+    ///
+    /// Only what it installed itself. A system package belongs to the package manager,
+    /// and overwriting it would leave dpkg or rpm describing files that are not there.
+    pub fn is_ours(self) -> bool {
+        matches!(self, Self::Launcher)
+    }
+
+    /// How to describe it in the window.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Launcher => "installed by SolidLauncher",
+            Self::Deb => "installed as a system package",
+            Self::Rpm => "installed as a system package",
+            Self::Flatpak => "installed as a Flatpak",
+            Self::Unknown => "already on this computer",
+        }
+    }
+}
+
 /// A SolidCraft tree this launcher can open.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Installed {
     pub version: Version,
     pub root: PathBuf,
     pub binary: PathBuf,
+    pub origin: Origin,
 }
 
 /// Older SolidCraft trees this launcher may delete, and why a tree was skipped.
@@ -106,8 +169,12 @@ pub fn install_archive(
     backend::install_archive(archive, home, kind, version)
 }
 
-pub fn launch(binary: &Path) -> Result<(), String> {
-    backend::launch(binary)
+/// Open the installed SolidCraft.
+///
+/// Takes the whole [`Installed`] rather than a path, because a Flatpak has no binary to
+/// run: it is opened through `flatpak run`.
+pub fn launch(installed: &Installed) -> Result<(), String> {
+    backend::launch(installed)
 }
 
 /// Delete SolidCraft trees older than the one in use.
@@ -201,6 +268,18 @@ mod tests {
             "",
         ] {
             assert_eq!(version_from_dir(name), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn only_our_own_install_may_be_replaced_or_swept() {
+        // Deleting around a system package would leave dpkg or rpm describing files that
+        // are not there, so everything but our own install is off limits.
+        assert!(Origin::Launcher.is_ours());
+        for other in [Origin::Deb, Origin::Rpm, Origin::Flatpak, Origin::Unknown] {
+            assert!(!other.is_ours(), "{other:?}");
+            // And each one can say what it is, for the window to show.
+            assert!(!other.label().is_empty(), "{other:?}");
         }
     }
 

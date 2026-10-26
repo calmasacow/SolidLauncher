@@ -15,7 +15,7 @@
 use std::fs;
 use std::path::Path;
 
-use super::{version_from_dir, zip, Installed, RemovedCopies};
+use super::{version_from_dir, zip, Installed, Origin, RemovedCopies};
 
 /// The program the window opens, and the file that proves a directory holds a real build.
 pub(super) const EXE: &str = "solidcraft.exe";
@@ -40,6 +40,7 @@ pub(super) fn detect(root: &Path) -> Option<Installed> {
         version,
         root: dir,
         binary,
+        origin: Origin::Launcher,
     })
 }
 
@@ -95,6 +96,7 @@ fn place(staging: &Path, top: &str, root: &Path) -> Result<Installed, String> {
         version,
         root: dir,
         binary,
+        origin: Origin::Launcher,
     })
 }
 
