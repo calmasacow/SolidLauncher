@@ -8,17 +8,41 @@ SolidLauncher downloads, installs, updates, and opens [SolidCraft](https://solid
 
 The window opens floating at 600×400. Its × hides it and leaves an icon in the status bar. Quit is in that icon's menu.
 
-## Download
+## Install
 
-The [latest release](https://github.com/calmasacow/SolidLauncher/releases/latest) has a Linux tarball and `SHA256SUMS.txt`. Unpack it into your home directory:
+The [latest release](https://github.com/calmasacow/SolidLauncher/releases/latest) is a Linux x86_64 tarball. It installs into your home directory and does not ask for a password.
+
+Download `solid-launcher-<version>-linux-x86_64.tar.gz` and `SHA256SUMS.txt` into the same folder. Then:
 
 ```sh
-tar -C ~/.local --strip-components=1 -xzf solid-launcher-<version>-linux-<arch>.tar.gz
+sha256sum -c SHA256SUMS.txt
+mkdir -p ~/.local
+tar -C ~/.local --strip-components=1 -xzf solid-launcher-<version>-linux-x86_64.tar.gz
 ```
 
-That puts `solid-launcher` on `~/.local/bin`, and the icon and desktop entry under `~/.local/share`. `~/.local/bin` needs to be on `PATH`.
+`sha256sum` prints `OK` when the tarball matches the published checksum. The unpack puts:
 
-A release is published when a tag such as `v0.1.0` is pushed, and that tag has to match the version in `Cargo.toml`.
+```text
+~/.local/bin/solid-launcher
+~/.local/share/applications/solid-launcher.desktop
+~/.local/share/icons/hicolor/256x256/apps/solid-launcher.png
+```
+
+The icon is also installed at 48, 64, and 128 pixels. `~/.local/bin` has to be on `PATH`. Check with `command -v solid-launcher`. If that prints nothing, add this line to your shell startup file and open a new terminal:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Start it:
+
+```sh
+solid-launcher
+```
+
+The window opens, and an icon stays in the status bar. The × hides the window. Quit is in the icon's menu. The first launch turns on Start on login and Start minimized, so the next login stays in the bar until you click the icon. Change those under Options.
+
+SolidCraft is not in this tarball. **Update** in the window installs it when you ask.
 
 ## Where SolidCraft is installed
 
@@ -66,6 +90,8 @@ cargo run -p solid-launcher -- --hidden # bar icon only
 cargo run -p solid-launcher -- --check  # installed version and the latest release
 cargo test --workspace
 ```
+
+A release is published by pushing a tag such as `v0.1.0`. The tag has to match the version in `Cargo.toml`. The release page includes the install steps above.
 
 ## Licence
 

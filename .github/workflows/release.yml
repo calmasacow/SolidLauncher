@@ -71,6 +71,7 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -82,9 +83,12 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           cd dist
           sha256sum solid-launcher-*.tar.gz > SHA256SUMS.txt
+          notes=$(mktemp)
+          sed "s/@VERSION@/${version}/g" "$GITHUB_WORKSPACE/packaging/linux/install.md" > "$notes"
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --title "SolidLauncher ${version}" \
             --generate-notes \
+            --notes "$(cat "$notes")" \
             solid-launcher-*.tar.gz \
             SHA256SUMS.txt
