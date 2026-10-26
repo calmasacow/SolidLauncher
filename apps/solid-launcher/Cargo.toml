@@ -12,7 +12,6 @@ name = "solid-launcher"
 path = "src/main.rs"
 
 [dependencies]
-eframe.workspace = true
 image = { version = "0.25", default-features = false, features = ["png"] }
 # Notifications: D-Bus on Linux and the BSDs, the notification centre on macOS, toasts
 # on Windows. One call instead of shelling out to notify-send, which only Linux has.
@@ -20,12 +19,29 @@ notify-rust = { version = "4", default-features = false, features = ["z"] }
 serde_json.workspace = true
 solid-launcher-native.workspace = true
 
-[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
-tray-icon = "0.25"
+# Linux, the BSDs and macOS keep the OpenGL renderer, which is what they have been
+# tested on.
+[target.'cfg(not(windows))'.dependencies]
+eframe = { version = "0.31", default-features = false, features = [
+    "default_fonts",
+    "glow",
+    "wayland",
+    "x11",
+] }
 
+# Windows gets wgpu instead, so the window is drawn through DirectX 12. A machine with no
+# graphics driver falls back to Microsoft's Basic Display Adapter, whose OpenGL is 1.1 —
+# too old for glow, while DX12 still works there through WARP.
 [target.'cfg(windows)'.dependencies]
+eframe = { version = "0.31", default-features = false, features = [
+    "default_fonts",
+    "wgpu",
+] }
 # The single-instance handoff listens on loopback, so its secret comes from the system.
 getrandom = "0.3"
+
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+tray-icon = "0.25"
 
 # Linux and the BSDs: StatusNotifierItem over D-Bus, so the bar icon needs no GTK.
 [target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))'.dependencies]

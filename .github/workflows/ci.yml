@@ -76,6 +76,16 @@ jobs:
       - name: Smoke test
         if: matrix.arch == 'x64'
         run: ./target/${{ matrix.target }}/release/solid-launcher.exe --help
+      - name: WiX
+        run: dotnet tool install --global wix --version 5.0.2
+      - name: WiX UI extension
+        run: wix extension add --global WixToolset.UI.wixext/5.0.2
+      - name: Package, so a broken installer fails here and not at release time
+        shell: pwsh
+        run: |
+          packaging/windows/package.ps1 -Version 0.0.0 -Arch "${{ matrix.arch }}" `
+            -Binary "target/${{ matrix.target }}/release/solid-launcher.exe"
+          Get-Item dist/solid-launcher-*.msi | ForEach-Object { Write-Host $_.Name $_.Length }
 
   macos:
     name: Test macOS

@@ -1,0 +1,14 @@
+# Link the MSVC C runtime into the program rather than loading it at start.
+#
+# Without this, solid-launcher.exe needs VCRUNTIME140.dll and MSVCP140.dll, which are not
+# on a clean Windows install: the user gets "VCRUNTIME140.dll was not found" and nothing
+# else. Static linking removes the dependency instead of asking the installer to check for
+# it, and costs a few hundred KB.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.i686-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

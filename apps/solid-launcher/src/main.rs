@@ -4,6 +4,13 @@
 //! Login starts it with `--hidden`, which never maps a window. Closing the window returns it
 //! to the bar; see `place` for how it is taken off the screen. Quit, in the tray menu, exits.
 
+// A window application, not a console one: without this Windows opens a terminal behind
+// the launcher's own window. Only in release, so `--check` and `--help` still print while
+// developing; in a release build on Windows they write to a console that is not there.
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
