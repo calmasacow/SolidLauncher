@@ -17,8 +17,17 @@ use std::path::{Path, PathBuf};
 use semver::Version;
 use solid_launcher_core::{parse_version, PackageKind};
 
-// Finding a SolidCraft that something else installed. Only the XDG platforms have
-// package managers to ask, but its parsing is tested everywhere.
+// Finding a SolidCraft that something else installed. Asking the package managers needs
+// a platform that has them; reading their answers does not, so the two are separate and
+// only the reading is compiled into the suite everywhere.
+#[cfg(any(
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "openbsd",
+    target_os = "netbsd",
+    target_os = "dragonfly"
+))]
+mod found;
 #[cfg(any(
     target_os = "linux",
     target_os = "freebsd",
@@ -27,7 +36,7 @@ use solid_launcher_core::{parse_version, PackageKind};
     target_os = "dragonfly",
     test
 ))]
-mod found;
+mod pkgquery;
 
 // Windows installs through these. They are also compiled under `cfg(test)` everywhere, so
 // the zip-slip guard and the layout rules are covered by the suite wherever it runs rather
