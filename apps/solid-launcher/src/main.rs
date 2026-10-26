@@ -28,7 +28,8 @@ use std::time::Duration;
 
 use eframe::egui;
 use solid_launcher_native::{
-    check_status, detect, home_dir, install_latest, launch, remove_old_copies, Status,
+    check_status, detect, home_dir, install_latest, keeps_old_versions, launch, remove_old_copies,
+    Status,
 };
 
 fn main() -> eframe::Result<()> {
@@ -838,16 +839,20 @@ fn show_options(
                     launcher.set_start_minimized(start_minimized);
                 }
                 ui.label("Used the next time you log in.");
-                let mut remove_old = launcher.settings.remove_old_versions;
-                if ui
-                    .checkbox(&mut remove_old, "Remove old versions")
-                    .changed()
-                {
-                    launcher.set_remove_old_versions(remove_old);
+                // Where a platform replaces the installed copy in place there are no older
+                // folders, so the option is left out rather than shown doing nothing.
+                if keeps_old_versions() {
+                    let mut remove_old = launcher.settings.remove_old_versions;
+                    if ui
+                        .checkbox(&mut remove_old, "Remove old versions")
+                        .changed()
+                    {
+                        launcher.set_remove_old_versions(remove_old);
+                    }
+                    ui.label(
+                        "Older SolidCraft folders in your home are removed. The one you are using stays.",
+                    );
                 }
-                ui.label(
-                    "Older SolidCraft folders in your home are removed. The one you are using stays.",
-                );
             });
         });
     response.response.clicked_elsewhere()

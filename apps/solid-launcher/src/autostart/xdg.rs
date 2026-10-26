@@ -36,3 +36,33 @@ pub(super) fn write(path: &Path, exe: &Path, minimized: bool) -> Result<(), Stri
     std::fs::write(path, entry(exe, minimized))
         .map_err(|err| format!("could not write {} ({err})", path.display()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::entry;
+    use std::path::Path;
+
+    #[test]
+    fn the_desktop_entry_carries_the_program_and_the_hidden_start() {
+        let plain = entry(Path::new("/home/someone/bin/solid-launcher"), false);
+        assert!(
+            plain.contains("Exec=/home/someone/bin/solid-launcher\n"),
+            "{plain}"
+        );
+        assert!(!plain.contains("--hidden"), "{plain}");
+
+        let hidden = entry(Path::new("/home/someone/bin/solid-launcher"), true);
+        assert!(
+            hidden.contains("Exec=/home/someone/bin/solid-launcher --hidden\n"),
+            "{hidden}"
+        );
+
+        // Exec is a command line: a path with a space has to be quoted or the session
+        // reads the tail as a second argument.
+        let spaced = entry(Path::new("/home/some one/bin/solid-launcher"), true);
+        assert!(
+            spaced.contains("Exec=\"/home/some one/bin/solid-launcher\" --hidden\n"),
+            "{spaced}"
+        );
+    }
+}

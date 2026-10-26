@@ -17,12 +17,15 @@
 
 mod http;
 mod install;
+mod shortcut;
 
 pub use http::{check_status, install_latest, Status};
 pub use install::{
     detect, home_dir, install_archive, keeps_old_versions, launch, remove_old_copies, Installed,
     RemovedCopies,
 };
+#[cfg(windows)]
+pub use shortcut::write_shortcut;
 /// Re-exported so the window can name a package without depending on the core crate.
 pub use solid_launcher_core::PackageKind;
 
