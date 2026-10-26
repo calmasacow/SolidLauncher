@@ -14,7 +14,13 @@ flate2.workspace = true
 semver.workspace = true
 sha2.workspace = true
 tar.workspace = true
+zip.workspace = true
 ureq.workspace = true
 
 [lints]
 workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# Writes a Start Menu .lnk as bytes: no COM, so the crate graph stays free of unsafe glue
+# we would have to vouch for.
+mslnk = "0.1"

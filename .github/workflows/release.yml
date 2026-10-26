@@ -79,9 +79,106 @@ jobs:
           path: dist/solid-launcher-*.tar.gz
           if-no-files-found: error
 
+  windows:
+    name: Windows ${{ matrix.arch }}
+    needs: version
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x64, target: x86_64-pc-windows-msvc }
+          - { arch: arm64, target: aarch64-pc-windows-msvc }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.target }}
+      - name: Test
+        if: matrix.arch == 'x64'
+        run: cargo test --workspace --locked --all-targets
+      - name: Build
+        run: cargo build --release --locked -p solid-launcher --target ${{ matrix.target }}
+      - name: Smoke test
+        if: matrix.arch == 'x64'
+        run: ./target/${{ matrix.target }}/release/solid-launcher.exe --help
+      - name: Package
+        run: |
+          packaging/windows/package.ps1 `
+            -Version "${{ needs.version.outputs.version }}" `
+            -Arch "${{ matrix.arch }}" `
+            -Binary "target/${{ matrix.target }}/release/solid-launcher.exe"
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solid-launcher-${{ needs.version.outputs.version }}-windows-${{ matrix.arch }}
+          path: dist/solid-launcher-*.zip
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal
+    needs: version
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: macos-universal
+      - name: Test
+        run: cargo test --workspace --locked --all-targets
+      - name: Import the signing certificate
+        # Skipped when the secrets are not set: the build is then ad-hoc signed, and the
+        # first start needs right-click then Open. See docs/signing.md.
+        if: env.CERTIFICATE != ''
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          security set-keychain-settings -lut 900 "$keychain"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain"
+          echo -n "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" \
+            -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$KEYCHAIN_PASSWORD" "$keychain" >/dev/null
+          security list-keychain -d user -s "$keychain" login.keychain-db
+          rm -f "$RUNNER_TEMP/certificate.p12"
+      - name: Store the notarization credentials
+        if: env.NOTARY_KEY != ''
+        env:
+          NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: |
+          echo -n "$NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          xcrun notarytool store-credentials solidlauncher \
+            --key "$RUNNER_TEMP/notary.p8" \
+            --key-id "$NOTARY_KEY_ID" \
+            --issuer "$NOTARY_ISSUER_ID"
+          rm -f "$RUNNER_TEMP/notary.p8"
+      - name: Build and package
+        env:
+          SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          NOTARY_PROFILE: ${{ secrets.MACOS_NOTARY_KEY_P8 != '' && 'solidlauncher' || '' }}
+        run: packaging/macos/package.sh "${{ needs.version.outputs.version }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solid-launcher-${{ needs.version.outputs.version }}-macos-universal
+          path: dist/solid-launcher-*.zip
+          if-no-files-found: error
+
   publish:
     name: Publish
-    needs: [version, linux]
+    needs: [version, linux, windows, macos]
     if: github.ref_type == 'tag'
     runs-on: ubuntu-24.04
     steps:
@@ -96,9 +193,11 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           cd dist
-          # One tarball per platform; a missing one means a build job silently produced nothing.
+          # One file per platform; a missing one means a build job silently produced nothing.
           test "$(ls -1 solid-launcher-*.tar.gz | wc -l)" -eq 2
-          sha256sum solid-launcher-*.tar.gz > SHA256SUMS.txt
+          # Two Windows zips and the macOS bundle zip.
+          test "$(ls -1 solid-launcher-*.zip | wc -l)" -eq 3
+          sha256sum solid-launcher-*.tar.gz solid-launcher-*.zip > SHA256SUMS.txt
           cat SHA256SUMS.txt
           notes=$(mktemp)
           sed "s/@VERSION@/${VERSION}/g" "$GITHUB_WORKSPACE/packaging/unix/install.md" > "$notes"
@@ -108,4 +207,5 @@ jobs:
             --generate-notes \
             --notes "$(cat "$notes")" \
             solid-launcher-*.tar.gz \
+            solid-launcher-*.zip \
             SHA256SUMS.txt

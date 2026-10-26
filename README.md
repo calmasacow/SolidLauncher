@@ -6,6 +6,8 @@
 
 SolidLauncher downloads, installs, updates, and opens [SolidCraft](https://solidcraft.io). It reads the latest release from [GitHub](https://github.com/tangency-labs/solidcraft), picks the build for this machine, and checks the file against the SHA-256 published with that release before anything is unpacked.
 
+Linux, Windows and macOS are supported.
+
 The window opens floating at 600×400. Its × hides it and leaves an icon in the status bar. Quit is in that icon's menu.
 
 ## Install
@@ -16,6 +18,11 @@ The [latest release](https://github.com/calmasacow/SolidLauncher/releases/latest
 |---|---|
 | Linux, 64-bit Intel or AMD | `solid-launcher-<version>-linux-x86_64.tar.gz` |
 | Linux, 64-bit ARM | `solid-launcher-<version>-linux-aarch64.tar.gz` |
+| Windows, 64-bit Intel or AMD | `solid-launcher-<version>-windows-x64.zip` |
+| Windows, ARM | `solid-launcher-<version>-windows-arm64.zip` |
+| macOS, Intel or Apple silicon | `solid-launcher-<version>-macos-universal.zip` |
+
+### Linux
 
 `uname -m` prints your architecture. Download that file and `SHA256SUMS.txt` into the same folder. Then:
 
@@ -49,9 +56,29 @@ The window opens, and an icon stays in the status bar. The × hides the window. 
 
 SolidCraft is not in this tarball. **Update** in the window installs it when you ask.
 
+### Windows
+
+Unpack the zip anywhere you like and run `solid-launcher.exe`. There is no installer and nothing needs administrator rights. Check the download first:
+
+```powershell
+Get-FileHash -Algorithm SHA256 solid-launcher-<version>-windows-x64.zip
+```
+
+Compare that against `SHA256SUMS.txt`. The first run shows a SmartScreen warning, because the binary is not signed: **More info** then **Run anyway**.
+
+### macOS
+
+Unpack the zip and drag `SolidLauncher.app` into your Applications folder. Check the download first:
+
+```sh
+shasum -a 256 -c SHA256SUMS.txt --ignore-missing
+```
+
+SolidLauncher is a status bar app: it has no Dock icon, and its window opens from the bar icon. If the release was not signed, the first start needs a right-click on the app and then **Open**; see [docs/signing.md](docs/signing.md).
+
 ## Where SolidCraft is installed
 
-SolidLauncher installs the official tarball. It is unpacked into the home directory, the same layout as installing it by hand, and it does not ask for a password.
+On Linux, SolidLauncher installs the official tarball. It is unpacked into the home directory, the same layout as installing it by hand, and it does not ask for a password.
 
 ```text
 ~/.local/opt/solidcraft-<version>-<os>-<arch>/
@@ -60,6 +87,19 @@ SolidLauncher installs the official tarball. It is unpacked into the home direct
 ~/.local/bin/solvecraft
 ~/.local/bin/solvecraft-cli
 ```
+
+On Windows there are two ways, and **Options** chooses between them. The portable zip is the default, because it matches the promise the Linux install makes: one user, no password.
+
+| Method | Where it goes | Administrator |
+|---|---|---|
+| Portable zip | `%LOCALAPPDATA%\Programs\SolidCraft\solidcraft-<version>-windows-<arch>\` | no |
+| Installer (MSI) | `%ProgramFiles%\SolidCraft`, for everyone on the machine | yes, a UAC prompt |
+
+The installer also registers the SolidCraft file types and an entry in Add or remove programs, which a portable copy cannot. A `method` file beside the install records which was used, so SolidLauncher knows where to look next time.
+
+On macOS, `SolidCraft.app` is copied out of the release's disk image into `~/Applications`, which needs no password. One copy exists at a time and each update replaces it, so there is nothing to sweep up and **Remove old versions** is not shown. The version is read from the bundle, so a copy you dragged across yourself is found too.
+
+SolidCraft's own disk image is ad-hoc signed and not notarized, so SolidLauncher clears the quarantine flag after the download matches the SHA-256 the release published. Without that, every update would need a right-click and **Open**.
 
 The `solvecraft` names stay so a launcher pinned before SolidCraft 0.8 keeps working. A file already in `~/.local/bin` that is not a symlink is left alone.
 
@@ -89,7 +129,7 @@ The tray icon is a StatusNotifierItem named `solid-launcher`. Left click shows o
 
 Rust 1.85 or newer.
 
-Both architectures are built and released from CI; see `.github/workflows/release.yml`.
+Every platform is built and released from CI; see `.github/workflows/release.yml`. The test suite covers the Windows install layout and the archive guards on any host, so `cargo test` on Linux exercises them too.
 
 ```sh
 cargo run -p solid-launcher             # window, and an icon in the bar

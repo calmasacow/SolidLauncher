@@ -1,4 +1,4 @@
-//! Fetch the latest SolidCraft release and its tarball.
+//! Fetch the latest SolidCraft release and the package for this computer.
 //!
 //! The only download host is `https://github.com/tangency-labs/solidcraft/releases/download/`.
 //! GitHub may redirect that URL to its asset storage; the request itself starts on the release URL.
@@ -29,6 +29,8 @@ pub struct Status {
     pub asset: String,
     pub notes: String,
     pub html_url: String,
+    /// What Update would install: a tarball, an installer, a disk image.
+    pub kind: PackageKind,
     /// `true` when nothing is installed, or the installed copy is older than `latest`.
     pub update_available: bool,
 }
@@ -38,12 +40,6 @@ pub fn check_status() -> Result<Status, String> {
     let installed = install::detect(&home);
     let release = fetch_latest()?;
     let (asset, kind) = choose(&release)?;
-    if kind != PackageKind::TarGz {
-        return Err(format!(
-            "this computer needs a Linux tarball, and the release offers a {}",
-            kind.label()
-        ));
-    }
     if asset.sha256.is_none() {
         return Err(format!(
             "{} was published without a SHA-256 checksum",
@@ -62,23 +58,23 @@ pub fn check_status() -> Result<Status, String> {
         asset: asset.name.clone(),
         notes: release.notes,
         html_url: release.html_url,
+        kind,
         update_available,
     })
 }
 
-/// Download the latest Linux tarball, verify it, and install it.
+/// Download the latest package for this computer, verify it, and install it.
 ///
 /// `progress` is called with bytes received and the expected total (0 when unknown).
 pub fn install_latest(progress: impl Fn(u64, u64)) -> Result<Installed, String> {
     let home = install::home_dir()?;
     let release = fetch_latest()?;
     let (asset, kind) = choose(&release)?;
-    if kind != PackageKind::TarGz {
-        return Err(format!(
-            "SolidLauncher installs the Linux tarball. This release offers a {}.",
-            kind.label()
-        ));
-    }
+    // `fetch_latest` refuses a release whose tag is not a version, so this is always set.
+    let version = release
+        .version
+        .clone()
+        .ok_or_else(|| format!("release tag {} is not a version", release.tag))?;
     let sha = asset
         .sha256
         .clone()
@@ -97,7 +93,7 @@ pub fn install_latest(progress: impl Fn(u64, u64)) -> Result<Installed, String> 
         .map_err(|err| format!("could not create the download folder ({err})"))?;
     let dest = cache.join(&asset.name);
     download(&asset.url, &dest, &sha, asset.size, &progress)?;
-    install::install_tarball(&dest, &home)
+    install::install_archive(&dest, &home, kind, &version)
 }
 
 fn choose(release: &Release) -> Result<(&solid_launcher_core::Asset, PackageKind), String> {

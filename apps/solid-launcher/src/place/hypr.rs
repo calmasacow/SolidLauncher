@@ -1,5 +1,8 @@
 //! Hide and show the SolidLauncher window on Hyprland.
 //!
+//! Hyprland is the one compositor here that needs more than `Visible(false)`, so it gets
+//! its own backend; see the note in `place/mod.rs`.
+//!
 //! Closing the winit window does not unmap it here: the event loop exits before it
 //! destroys the Wayland surface, so the window would stay on screen. Moving it to a
 //! named special workspace takes it off the monitor and leaves the process running.
@@ -8,7 +11,6 @@
 //! move drops the float. Size and float are set only after the window has arrived.
 
 use std::process::Command;
-use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
@@ -18,52 +20,7 @@ const WINDOW_CLASS: &str = "solid-launcher";
 const WIDTH: i64 = 600;
 const HEIGHT: i64 = 400;
 
-enum PlaceJob {
-    Reveal,
-    Conceal,
-}
-
-/// Hyprland calls go through here, off the window thread.
-///
-/// A `hyprctl` round trip from the window thread stops that thread reading Wayland.
-/// Hyprland then decides the app is not responding and shows its dialog.
-pub struct Place {
-    tx: Sender<PlaceJob>,
-}
-
-impl Place {
-    pub fn start() -> Self {
-        let (tx, rx) = mpsc::channel();
-        thread::spawn(move || place_worker(rx));
-        Self { tx }
-    }
-
-    pub fn reveal(&self) {
-        let _ = self.tx.send(PlaceJob::Reveal);
-    }
-
-    pub fn conceal(&self) {
-        let _ = self.tx.send(PlaceJob::Conceal);
-    }
-}
-
-fn place_worker(rx: Receiver<PlaceJob>) {
-    while let Ok(mut job) = rx.recv() {
-        while let Ok(newer) = rx.try_recv() {
-            job = newer;
-        }
-        match job {
-            PlaceJob::Reveal => {
-                let _ = reveal_launcher();
-            }
-            PlaceJob::Conceal => {
-                let _ = conceal_launcher();
-            }
-        }
-    }
-}
-
-fn conceal_launcher() -> bool {
+pub(super) fn conceal() -> bool {
     if !eval(&format!(
         r#"hl.dispatch(hl.dsp.window.move({{ workspace = "{SPECIAL}", follow = false, window = "{CLASS}" }}))"#
     )) {
@@ -72,7 +29,7 @@ fn conceal_launcher() -> bool {
     wait_until(|snap| is_special(&snap.workspace), 8)
 }
 
-fn reveal_launcher() -> bool {
+pub(super) fn reveal() -> bool {
     // Moving onto a tiled workspace drops the float after this call returns, which flashes
     // a stretched window. The listener floats it again inside the compositor, on that move.
     ensure_hook();
