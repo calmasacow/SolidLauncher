@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SolidLauncher's Windows installer (WiX 5).
+
+  Per-user: it installs into %LOCALAPPDATA%\Programs\SolidLauncher and never asks for
+  administrator rights, which is the promise SolidLauncher keeps on every other platform
+  and the only kind of install that works on a locked-down machine.
+
+  Dependency checks are the <Launch> conditions below. There is deliberately no check for
+  the Visual C++ runtime: the program is linked with /MT (see .cargo/config.toml), so
+  VCRUNTIME140.dll is not needed at all. A dependency removed beats a dependency detected.
+
+  The graphics driver cannot be checked from here — OpenGL and Direct3D capability is not
+  a registry key. That is handled instead by building the Windows renderer on wgpu, which
+  reaches DirectX 12 and falls back to WARP when no GPU driver is installed.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package
+      Name="SolidLauncher"
+      Manufacturer="SolidLauncher"
+      Version="$(var.Version)"
+      Scope="perUser"
+      Compressed="yes"
+      UpgradeCode="B172A3EC-FF84-4BE9-971B-035C52490640">
+
+    <!-- Replaces an earlier version in place rather than installing beside it. -->
+    <MajorUpgrade
+        AllowSameVersionUpgrades="yes"
+        DowngradeErrorMessage="A newer version of SolidLauncher is already installed. Remove it first if you mean to go back." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- ===== dependency checks ================================================ -->
+
+    <!--
+      Windows 10 or newer. CurrentMajorVersionNumber exists only from Windows 10, and
+      VersionNT cannot be trusted for this: Windows 10 and 11 both report 603 to an MSI
+      unless the package is manifested, so a numeric comparison on it would pass on
+      Windows 8.1.
+    -->
+    <Property Id="WINDOWSMAJORVERSION">
+      <RegistrySearch
+          Id="WindowsMajorVersionSearch"
+          Root="HKLM"
+          Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+          Name="CurrentMajorVersionNumber"
+          Type="raw" />
+    </Property>
+
+    <Launch
+        Condition="Installed OR WINDOWSMAJORVERSION"
+        Message="SolidLauncher needs Windows 10 or newer. This computer is running an older version of Windows." />
+
+    <!-- ===== files ============================================================ -->
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="SolidLauncher" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <ComponentGroup Id="SolidLauncherFiles" Directory="INSTALLFOLDER">
+      <Component Id="SolidLauncherExe" Guid="*">
+        <File Id="SolidLauncherExeFile"
+              Source="$(var.BinaryPath)"
+              Name="solid-launcher.exe"
+              KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut"
+                    Directory="ProgramMenuFolder"
+                    Name="SolidLauncher"
+                    Description="Install, update and open SolidCraft"
+                    WorkingDirectory="INSTALLFOLDER"
+                    Advertise="yes" />
+        </File>
+      </Component>
+      <!--
+        One component per licence file. An automatically generated component GUID needs a
+        single file as the component's keypath, or a versioned keypath with unversioned
+        files beside it; three plain text files in one component is neither.
+      -->
+      <Component Id="LicenceMit" Guid="*">
+        <File Id="LicenceMitFile" Source="$(var.SourceRoot)\LICENSE-MIT" KeyPath="yes" />
+      </Component>
+      <Component Id="LicenceApache" Guid="*">
+        <File Id="LicenceApacheFile" Source="$(var.SourceRoot)\LICENSE-APACHE" KeyPath="yes" />
+      </Component>
+      <Component Id="Attribution" Guid="*">
+        <File Id="AttributionFile" Source="$(var.SourceRoot)\ATTRIBUTION.md" KeyPath="yes" />
+      </Component>
+      <!--
+        A per-user install writes its own uninstall entry, but the Start Menu folder and
+        anything the program created under it are not the installer's to delete, so only
+        what is listed here is removed.
+      -->
+      <Component Id="RemoveInstallFolder" Guid="*">
+        <RemoveFolder Id="CleanInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\SolidLauncher"
+                       Name="InstallDir"
+                       Type="string"
+                       Value="[INSTALLFOLDER]"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="SolidLauncher" Level="1">
+      <ComponentGroupRef Id="SolidLauncherFiles" />
+    </Feature>
+
+    <!-- ===== interface ======================================================== -->
+
+    <Icon Id="SolidLauncherIcon" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="SolidLauncherIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/calmasacow/SolidLauncher" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenceRtf)" />
+
+    <!--
+      No "start it now" checkbox on the last page. Doing that properly needs the Util
+      extension's WixShellExec, and a hand-rolled custom action that launches a program
+      from the installer is the kind of thing that works on the machine it was written on.
+      The Start Menu entry is one click away.
+    -->
+
+  </Package>
+</Wix>

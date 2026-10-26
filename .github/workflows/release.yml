@@ -105,6 +105,10 @@ jobs:
       - name: Smoke test
         if: matrix.arch == 'x64'
         run: ./target/${{ matrix.target }}/release/solid-launcher.exe --help
+      - name: WiX
+        run: dotnet tool install --global wix --version 5.0.2
+      - name: WiX UI extension
+        run: wix extension add --global WixToolset.UI.wixext/5.0.2
       - name: Package
         run: |
           packaging/windows/package.ps1 `
@@ -112,10 +116,32 @@ jobs:
             -Arch "${{ matrix.arch }}" `
             -Binary "target/${{ matrix.target }}/release/solid-launcher.exe"
         shell: pwsh
+      - name: Check the installer
+        shell: pwsh
+        run: |
+          $msi = Get-Item dist/solid-launcher-*.msi
+          if ($msi.Length -lt 1MB) { throw "$($msi.Name) is suspiciously small" }
+          # The MSI must carry the program, or it installs nothing.
+          $installer = New-Object -ComObject WindowsInstaller.Installer
+          $db = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null,
+                  $installer, @($msi.FullName, 0))
+          $view = $db.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $db,
+                  @("SELECT FileName FROM File"))
+          $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
+          $names = @()
+          while ($true) {
+            $rec = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+            if ($null -eq $rec) { break }
+            $names += $rec.GetType().InvokeMember('StringData', 'GetProperty', $null, $rec, 1)
+          }
+          Write-Host "files in the MSI: $($names -join ', ')"
+          if (-not ($names -match 'solid-launcher.exe')) { throw "the MSI has no solid-launcher.exe" }
       - uses: actions/upload-artifact@v4
         with:
           name: solid-launcher-${{ needs.version.outputs.version }}-windows-${{ matrix.arch }}
-          path: dist/solid-launcher-*.zip
+          path: |
+            dist/solid-launcher-*.zip
+            dist/solid-launcher-*.msi
           if-no-files-found: error
 
   macos:
@@ -197,7 +223,9 @@ jobs:
           test "$(ls -1 solid-launcher-*.tar.gz | wc -l)" -eq 2
           # Two Windows zips and the macOS bundle zip.
           test "$(ls -1 solid-launcher-*.zip | wc -l)" -eq 3
-          sha256sum solid-launcher-*.tar.gz solid-launcher-*.zip > SHA256SUMS.txt
+          # One MSI per Windows architecture.
+          test "$(ls -1 solid-launcher-*.msi | wc -l)" -eq 2
+          sha256sum solid-launcher-*.tar.gz solid-launcher-*.zip solid-launcher-*.msi > SHA256SUMS.txt
           cat SHA256SUMS.txt
           notes=$(mktemp)
           sed "s/@VERSION@/${VERSION}/g" "$GITHUB_WORKSPACE/packaging/unix/install.md" > "$notes"
@@ -208,4 +236,5 @@ jobs:
             --notes "$(cat "$notes")" \
             solid-launcher-*.tar.gz \
             solid-launcher-*.zip \
+            solid-launcher-*.msi \
             SHA256SUMS.txt

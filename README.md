@@ -18,8 +18,8 @@ The [latest release](https://github.com/calmasacow/SolidLauncher/releases/latest
 |---|---|
 | Linux, 64-bit Intel or AMD | `solid-launcher-<version>-linux-x86_64.tar.gz` |
 | Linux, 64-bit ARM | `solid-launcher-<version>-linux-aarch64.tar.gz` |
-| Windows, 64-bit Intel or AMD | `solid-launcher-<version>-windows-x64.zip` |
-| Windows, ARM | `solid-launcher-<version>-windows-arm64.zip` |
+| Windows, 64-bit Intel or AMD | `solid-launcher-<version>-windows-x64.msi` |
+| Windows, ARM | `solid-launcher-<version>-windows-arm64.msi` |
 | macOS, Intel or Apple silicon | `solid-launcher-<version>-macos-universal.zip` |
 
 ### Linux
@@ -58,13 +58,19 @@ SolidCraft is not in this tarball. **Update** in the window installs it when you
 
 ### Windows
 
-Unpack the zip anywhere you like and run `solid-launcher.exe`. There is no installer and nothing needs administrator rights. Check the download first:
+Run the `.msi`. It installs for you alone, into `%LOCALAPPDATA%\\Programs\\SolidLauncher`, and never asks for administrator rights, so it works on a machine where you are not an admin. It adds a Start Menu entry and an entry in Add or remove programs.
+
+Check the download first:
 
 ```powershell
-Get-FileHash -Algorithm SHA256 solid-launcher-<version>-windows-x64.zip
+Get-FileHash -Algorithm SHA256 solid-launcher-<version>-windows-x64.msi
 ```
 
-Compare that against `SHA256SUMS.txt`. The first run shows a SmartScreen warning, because the binary is not signed: **More info** then **Run anyway**.
+Compare that against `SHA256SUMS.txt`. The first run shows a SmartScreen warning, because the installer is not signed: **More info** then **Run anyway**.
+
+A `.zip` is published beside the `.msi` for anyone who would rather unpack it by hand, or whose machine will not run an installer. It holds the same `solid-launcher.exe`.
+
+**What the installer checks.** It refuses to install on anything older than Windows 10 and says so, rather than installing something that will not start. It does *not* check for the Visual C++ runtime, because there is nothing to check: the program is linked with a static C runtime, so `VCRUNTIME140.dll` is not needed. The graphics driver cannot be checked by an installer at all, so the Windows build draws through DirectX 12 instead of OpenGL — that works even on a machine running Microsoft's Basic Display Adapter, whose OpenGL is too old for the renderer the other platforms use.
 
 ### macOS
 
