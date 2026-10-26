@@ -8,7 +8,19 @@ SolidLauncher downloads, installs, updates, and opens [SolidCraft](https://solid
 
 The window opens floating at 600×400. Its × hides it and leaves an icon in the status bar. Quit is in that icon's menu.
 
-## Install layout
+## Download
+
+The [latest release](https://github.com/calmasacow/SolidLauncher/releases/latest) has a Linux tarball and `SHA256SUMS.txt`. Unpack it into your home directory:
+
+```sh
+tar -C ~/.local --strip-components=1 -xzf solid-launcher-<version>-linux-<arch>.tar.gz
+```
+
+That puts `solid-launcher` on `~/.local/bin`, and the icon and desktop entry under `~/.local/share`. `~/.local/bin` needs to be on `PATH`.
+
+A release is published when a tag such as `v0.1.0` is pushed, and that tag has to match the version in `Cargo.toml`.
+
+## Where SolidCraft is installed
 
 The Linux package is the official tarball. It is unpacked into the home directory, the same layout as installing it by hand, and it does not ask for a password.
 
