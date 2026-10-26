@@ -16,15 +16,36 @@ The [latest release](https://github.com/calmasacow/SolidLauncher/releases/latest
 
 | Machine | File |
 |---|---|
-| Linux, 64-bit Intel or AMD | `solid-launcher-<version>-linux-x86_64.tar.gz` |
-| Linux, 64-bit ARM | `solid-launcher-<version>-linux-aarch64.tar.gz` |
+| Linux, 64-bit Intel or AMD | `.AppImage`, `.deb`, `.rpm` or `.tar.gz`, all `-linux-x86_64` |
+| Linux, 64-bit ARM | the same four, `-linux-aarch64` |
 | Windows, 64-bit Intel or AMD | `solid-launcher-<version>-windows-x64.msi` |
 | Windows, ARM | `solid-launcher-<version>-windows-arm64.msi` |
 | macOS, Intel or Apple silicon | `solid-launcher-<version>-macos-universal.zip` |
 
 ### Linux
 
-`uname -m` prints your architecture. Download that file and `SHA256SUMS.txt` into the same folder. Then:
+Four formats, same program in each. `uname -m` prints your architecture.
+
+| File | What it is |
+|---|---|
+| `.AppImage` | One file. Make it executable and run it; nothing is installed. |
+| `.deb` | A system package for Debian and Ubuntu. Needs root. |
+| `.rpm` | A system package for Fedora and openSUSE. Needs root. |
+| `.tar.gz` | Unpacks into your home directory. No root. |
+
+```sh
+# AppImage
+chmod +x solid-launcher-<version>-linux-x86_64.AppImage
+./solid-launcher-<version>-linux-x86_64.AppImage
+
+# Debian or Ubuntu
+sudo apt install ./solid-launcher-<version>-linux-x86_64.deb
+
+# Fedora or openSUSE
+sudo dnf install ./solid-launcher-<version>-linux-x86_64.rpm
+```
+
+For the tarball, download it and `SHA256SUMS.txt` into the same folder. Then:
 
 ```sh
 sha256sum --ignore-missing -c SHA256SUMS.txt

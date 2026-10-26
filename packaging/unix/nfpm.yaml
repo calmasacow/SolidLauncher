@@ -1,0 +1,47 @@
+# .deb and .rpm packages for SolidLauncher (nfpm: https://nfpm.goreleaser.com).
+#
+# Run by package.sh, which stages the file tree and substitutes its path for ${STAGE}
+# (nfpm does not expand environment variables in `src`). Version and architecture do come
+# from the environment, which nfpm does expand.
+#
+# SolidLauncher has no runtime dependencies beyond a graphical session: it is a static
+# Rust binary that talks to the desktop over D-Bus and draws with OpenGL. The `recommends`
+# below are what a bare container would be missing, not hard requirements.
+name: solid-launcher
+arch: ${SOLID_LAUNCHER_ARCH}
+version: ${SOLID_LAUNCHER_VERSION}
+version_schema: semver
+section: utils
+priority: optional
+maintainer: SolidLauncher <noreply@github.com>
+description: |
+  Install, update and open SolidCraft.
+  SolidLauncher downloads the SolidCraft release for this machine, checks it against the
+  SHA-256 published with that release, installs it, and keeps it up to date.
+vendor: SolidLauncher
+homepage: https://github.com/calmasacow/SolidLauncher
+license: MIT OR Apache-2.0
+
+contents:
+  - src: ${STAGE}/usr/bin/solid-launcher
+    dst: /usr/bin/solid-launcher
+    file_info:
+      mode: 0755
+  - src: ${STAGE}/usr/share/applications/solid-launcher.desktop
+    dst: /usr/share/applications/solid-launcher.desktop
+  - src: ${STAGE}/usr/share/icons/hicolor/48x48/apps/solid-launcher.png
+    dst: /usr/share/icons/hicolor/48x48/apps/solid-launcher.png
+  - src: ${STAGE}/usr/share/icons/hicolor/64x64/apps/solid-launcher.png
+    dst: /usr/share/icons/hicolor/64x64/apps/solid-launcher.png
+  - src: ${STAGE}/usr/share/icons/hicolor/128x128/apps/solid-launcher.png
+    dst: /usr/share/icons/hicolor/128x128/apps/solid-launcher.png
+  - src: ${STAGE}/usr/share/icons/hicolor/256x256/apps/solid-launcher.png
+    dst: /usr/share/icons/hicolor/256x256/apps/solid-launcher.png
+
+recommends:
+  - libxkbcommon0
+
+deb:
+  compression: xz
+rpm:
+  compression: xz:default
