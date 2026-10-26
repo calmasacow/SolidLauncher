@@ -31,7 +31,10 @@ mod xdg;
 ))]
 use xdg as backend;
 
-#[cfg(target_os = "macos")]
+// Compiled under cfg(test) everywhere, not only on macOS, so the plist it writes is
+// covered by the suite wherever it runs. A LaunchAgent is a file, and nothing about
+// writing one needs a Mac.
+#[cfg(any(target_os = "macos", test))]
 mod macos;
 #[cfg(target_os = "macos")]
 use macos as backend;
