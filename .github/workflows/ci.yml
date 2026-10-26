@@ -72,6 +72,16 @@ jobs:
           test -s "dist/solid-launcher-0.0.0-linux-$a.rpm"
           desktop-file-validate packaging/unix/solid-launcher.desktop
           ls -la dist/
+      # The packages CI already builds are thrown away at the end of the run. Keeping
+      # them means any branch can be installed and tried on real hardware without
+      # cutting a release first. They are versioned 0.0.0 and unsigned: test builds.
+      - name: Keep the packages, so this branch can be installed and tried
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-build-linux-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
 
   windows:
     name: Test Windows ${{ matrix.arch }}
@@ -114,6 +124,13 @@ jobs:
           packaging/windows/package.ps1 -Version 0.0.0 -Arch "${{ matrix.arch }}" `
             -Binary "target/${{ matrix.target }}/release/solid-launcher.exe"
           Get-Item dist/solid-launcher-*.msi | ForEach-Object { Write-Host $_.Name $_.Length }
+      - name: Keep the installer, so this branch can be installed and tried
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-build-windows-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
 
   macos:
     name: Test macOS
@@ -139,3 +156,10 @@ jobs:
         run: packaging/macos/package.sh 0.0.0-ci --skip-build
       - name: Smoke test the bundled binary
         run: ./target/macos-package/SolidLauncher.app/Contents/MacOS/SolidLauncher --help
+      - name: Keep the app, so this branch can be installed and tried
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-build-macos-universal
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

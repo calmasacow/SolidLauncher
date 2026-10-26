@@ -165,6 +165,18 @@ cargo run -p solid-launcher -- --check  # installed version and the latest relea
 cargo test --workspace
 ```
 
+## Test builds
+
+Every branch and pull request produces installable builds, so a change can be tried on real hardware before it is released. Open the run under [Actions](https://github.com/calmasacow/SolidLauncher/actions), scroll to **Artifacts**, and download the one for your machine:
+
+| Artifact | Holds |
+|---|---|
+| `test-build-linux-x86_64`, `…-aarch64` | `.tar.gz`, `.AppImage`, `.deb`, `.rpm` |
+| `test-build-windows-x64`, `…-arm64` | `.msi` and the portable `.zip` |
+| `test-build-macos-universal` | `SolidLauncher.app` in a `.zip` |
+
+These are test builds, not releases. They are versioned `0.0.0`, they are unsigned, and they are deleted after 14 days. GitHub wraps every artifact in a zip of its own, so unzip it first — and on Linux that drops the executable bit, which `chmod +x` puts back on the AppImage.
+
 A release is published by pushing a tag such as `v0.1.0`. The tag has to match the version in `Cargo.toml`. The release page includes the install steps above.
 
 ## Licence
