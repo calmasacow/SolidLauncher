@@ -31,6 +31,9 @@ pub(super) fn install_archive(
     archive: &Path,
     home: &Path,
     kind: PackageKind,
+    // The installed directory carries the version, which describes the files on disk
+    // rather than what the release claimed, so this is not needed here.
+    _version: &semver::Version,
 ) -> Result<Installed, String> {
     if kind != PackageKind::TarGz {
         return Err(format!(
