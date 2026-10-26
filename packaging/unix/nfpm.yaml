@@ -44,4 +44,5 @@ recommends:
 deb:
   compression: xz
 rpm:
-  compression: xz:default
+  # Plain xz. nfpm takes a level here (xz:9), not the word 'default', and rejects it.
+  compression: xz
