@@ -1,4 +1,4 @@
-//! The three options in the window, and the login entry they control.
+//! The three options in the window. The login entry two of them control is in `autostart`.
 
 use std::path::{Path, PathBuf};
 
@@ -88,65 +88,13 @@ impl Settings {
     }
 }
 
-/// Create or remove `~/.config/autostart/solid-launcher.desktop` to match the options.
-pub fn apply(settings: &Settings) -> Result<(), String> {
-    let exe =
-        std::env::current_exe().map_err(|err| format!("could not find SolidLauncher ({err})"))?;
-    apply_at(&autostart_path()?, &exe, settings)
-}
-
-pub fn apply_at(path: &Path, exe: &Path, settings: &Settings) -> Result<(), String> {
-    if !settings.start_on_login {
-        match std::fs::remove_file(path) {
-            Ok(()) => Ok(()),
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(err) => Err(format!("could not turn off start on login ({err})")),
-        }
-    } else {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|err| format!("could not create {} ({err})", parent.display()))?;
-        }
-        let body = autostart_entry(exe, settings.start_minimized);
-        std::fs::write(path, body)
-            .map_err(|err| format!("could not write {} ({err})", path.display()))
-    }
-}
-
-pub fn autostart_entry(exe: &Path, minimized: bool) -> String {
-    let mut exec = exe.display().to_string();
-    if exec.contains([' ', '\t', '"']) {
-        exec = format!("\"{}\"", exec.replace('"', "\\\""));
-    }
-    if minimized {
-        exec = format!("{exec} --hidden");
-    }
-    format!(
-        "[Desktop Entry]\n\
-         Type=Application\n\
-         Version=1.0\n\
-         Name=SolidLauncher\n\
-         Comment=Install, update and open SolidCraft\n\
-         Exec={exec}\n\
-         Icon=solid-launcher\n\
-         Terminal=false\n\
-         StartupNotify=false\n\
-         StartupWMClass=solid-launcher\n\
-         X-GNOME-Autostart-enabled=true\n"
-    )
-}
-
 fn settings_path() -> Result<PathBuf, String> {
     Ok(home_dir()?.join(".config/solid-launcher/settings.json"))
 }
 
-fn autostart_path() -> Result<PathBuf, String> {
-    Ok(home_dir()?.join(".config/autostart/solid-launcher.desktop"))
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{apply_at, autostart_entry, Settings};
+    use super::Settings;
 
     #[test]
     fn missing_keys_keep_the_usual_choices() {
@@ -173,31 +121,6 @@ mod tests {
         assert!(again.start_on_login);
         assert!(!again.start_minimized);
         assert!(again.remove_old_versions);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn login_entry_follows_the_two_start_options() {
-        let dir = std::env::temp_dir().join(format!("solid-launcher-auto-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        let path = dir.join("autostart.desktop");
-        let exe = std::path::Path::new("/home/calmasacow/.local/bin/solid-launcher");
-        let mut settings = Settings::default();
-        assert!(apply_at(&path, exe, &settings).is_ok());
-        let text = std::fs::read_to_string(&path).unwrap_or_default();
-        assert!(!text.is_empty());
-        assert!(text.contains("Exec=/home/calmasacow/.local/bin/solid-launcher --hidden\n"));
-        assert_eq!(text, autostart_entry(exe, true));
-
-        settings.start_minimized = false;
-        assert!(apply_at(&path, exe, &settings).is_ok());
-        let shown = std::fs::read_to_string(&path).unwrap_or_default();
-        assert!(shown.contains("Exec=/home/calmasacow/.local/bin/solid-launcher\n"));
-        assert!(!shown.contains("--hidden"));
-
-        settings.start_on_login = false;
-        assert!(apply_at(&path, exe, &settings).is_ok());
-        assert!(!path.exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

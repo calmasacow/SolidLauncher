@@ -1,8 +1,8 @@
 //! SolidLauncher window: the installed SolidCraft version, the latest release, and the buttons
 //! that install, update or open it.
 //!
-//! Login starts it with `--hidden`. On this machine the bar cannot hide a mapped window, so that
-//! start never maps one. Closing the window returns to the bar. Quit, in the tray menu, exits.
+//! Login starts it with `--hidden`, which never maps a window. Closing the window returns it
+//! to the bar; see `place` for how it is taken off the screen. Quit, in the tray menu, exits.
 
 #![deny(
     clippy::unwrap_used,
@@ -13,8 +13,10 @@
     clippy::unreachable
 )]
 
-mod hypr;
+mod autostart;
 mod instance;
+mod notify;
+mod place;
 mod settings;
 mod tray;
 
@@ -254,9 +256,10 @@ struct Launcher {
     options_open: bool,
     /// The window was moved off the monitor. The process is still in the bar.
     concealed: bool,
-    /// Talks to Hyprland away from the window thread, so a show or hide cannot trip the
+    /// Takes the window off the screen, away from the window thread, so a show or hide
+    /// cannot trip the
     /// "not responding" dialog.
-    place: hypr::Place,
+    place: place::Place,
     /// Drop older trees after the install's follow-up check, so that check does not wipe the note.
     sweep_after_install: bool,
     /// Window artwork. Loaded once, then painted behind the controls.
@@ -277,8 +280,8 @@ impl Launcher {
             None => "Checking GitHub for SolidCraft…".to_string(),
         };
         let (settings, settings_note) = settings::Settings::load();
-        let autostart_note = settings::apply(&settings).err();
-        let place = hypr::Place::start();
+        let autostart_note = autostart::apply(&settings).err();
+        let place = place::Place::start();
         let app = Self {
             waker,
             tx,
@@ -371,7 +374,7 @@ impl Launcher {
                         announce_version(&status, self.announced.as_deref())
                     {
                         self.announced = Some(latest.clone());
-                        notify_update(latest, installed);
+                        notify::update_available(&latest, &installed);
                     }
                     self.status = Some(status);
                     self.remember_local();
@@ -443,7 +446,7 @@ impl Launcher {
             self.error = Some(err);
             return false;
         }
-        if let Err(err) = settings::apply(&self.settings) {
+        if let Err(err) = autostart::apply(&self.settings) {
             self.error = Some(err);
             return false;
         }
@@ -597,12 +600,25 @@ impl Shell<'_> {
         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
     }
 
+    /// Take the window off the screen, leaving the process in the status bar.
+    ///
+    /// Hyprland moves the window itself; everywhere else the surface is hidden here. Doing
+    /// both on Hyprland would unmap a window the compositor has already moved, and the
+    /// event loop would then exit with it still on screen.
+    fn conceal(&mut self, ctx: &egui::Context) {
+        self.launcher.concealed = true;
+        self.launcher.closed_to_tray = false;
+        if self.launcher.place.hides_the_window() {
+            self.launcher.place.conceal();
+        } else {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
+    }
+
     /// The × and the window-manager close both come here. The process stays in the bar.
     fn put_away(&mut self, ctx: &egui::Context) {
         if self.launcher.tray.is_some() {
-            self.launcher.concealed = true;
-            self.launcher.closed_to_tray = false;
-            self.launcher.place.conceal();
+            self.conceal(ctx);
             return;
         }
         self.quitting = true;
@@ -622,9 +638,7 @@ impl eframe::App for Shell<'_> {
         if close_requested && !self.quitting {
             // Closing the surface from here leaves it mapped. Cancel that and move it off screen.
             if self.launcher.tray.is_some() {
-                self.launcher.concealed = true;
-                self.launcher.closed_to_tray = false;
-                self.launcher.place.conceal();
+                self.conceal(ctx);
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             }
         }
@@ -903,33 +917,6 @@ fn announce_version(status: &Status, already: Option<&str>) -> Option<(String, S
     Some((status.latest.clone(), installed))
 }
 
-fn notify_update(latest: String, installed: String) {
-    thread::spawn(move || {
-        let summary = format!("SolidCraft {latest} is available");
-        let body = format!("{installed} is installed. Open SolidLauncher to update.");
-        let icon = notification_icon();
-        let ran = std::process::Command::new("notify-send")
-            .arg("--app-name=SolidLauncher")
-            .arg(format!("--icon={icon}"))
-            .arg(summary)
-            .arg(body)
-            .status();
-        if !matches!(ran, Ok(status) if status.success()) {
-            eprintln!("SolidLauncher: could not show the update notification");
-        }
-    });
-}
-
-fn notification_icon() -> String {
-    let home = std::env::var("HOME").unwrap_or_default();
-    let path = format!("{home}/.local/share/icons/hicolor/128x128/apps/solid-launcher.png");
-    if std::path::Path::new(&path).is_file() {
-        path
-    } else {
-        "solid-launcher".to_string()
-    }
-}
-
 fn headline(status: &Status) -> String {
     match (&status.installed, status.update_available) {
         (None, _) => format!("SolidCraft {} is ready to install.", status.latest),
@@ -961,6 +948,7 @@ mod tests {
             asset: String::new(),
             notes: String::new(),
             html_url: String::new(),
+            kind: solid_launcher_native::PackageKind::TarGz,
             update_available: update,
         }
     }
