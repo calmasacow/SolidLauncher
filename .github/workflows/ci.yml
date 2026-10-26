@@ -22,6 +22,8 @@ jobs:
         include:
           - { arch: x86_64, runner: ubuntu-24.04, lint: true }
           - { arch: aarch64, runner: ubuntu-24.04-arm, lint: false }
+    env:
+      NFPM_VERSION: "2.43.0"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -44,6 +46,32 @@ jobs:
         run: |
           cargo build --release --locked -p solid-launcher
           target/release/solid-launcher --help
+      - name: Packaging tools
+        run: |
+          set -eu
+          sudo apt-get install -y --no-install-recommends librsvg2-bin desktop-file-utils
+          case "${{ matrix.arch }}" in
+            x86_64) nfpm_arch=x86_64; appimage_arch=x86_64 ;;
+            aarch64) nfpm_arch=arm64; appimage_arch=aarch64 ;;
+          esac
+          curl -fsSL -o "$RUNNER_TEMP/nfpm.tar.gz" \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_${nfpm_arch}.tar.gz"
+          tar -xzf "$RUNNER_TEMP/nfpm.tar.gz" -C "$RUNNER_TEMP" nfpm
+          sudo install -m 755 "$RUNNER_TEMP/nfpm" /usr/local/bin/nfpm
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool" \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${appimage_arch}.AppImage"
+          sudo install -m 755 "$RUNNER_TEMP/appimagetool" /usr/local/bin/appimagetool
+          echo "APPIMAGE_EXTRACT_AND_RUN=1" >> "$GITHUB_ENV"
+      - name: Package, so a broken package definition fails here and not at release time
+        run: |
+          set -eu
+          packaging/unix/package.sh 0.0.0 linux "${{ matrix.arch }}" target/release/solid-launcher
+          a="${{ matrix.arch }}"
+          dpkg-deb --contents "dist/solid-launcher-0.0.0-linux-$a.deb" | grep -F usr/bin/solid-launcher
+          test -x "dist/solid-launcher-0.0.0-linux-$a.AppImage"
+          test -s "dist/solid-launcher-0.0.0-linux-$a.rpm"
+          desktop-file-validate packaging/unix/solid-launcher.desktop
+          ls -la dist/
 
   windows:
     name: Test Windows ${{ matrix.arch }}
