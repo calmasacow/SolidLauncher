@@ -1,37 +1,48 @@
-//! Install the official SolidCraft tarball into the home directory.
+//! Install the official SolidCraft tarball into an XDG home directory.
 //!
-//! The tree lands in `~/.local/opt/solidcraft-<version>-linux-<arch>`. Symlinks in
-//! `~/.local/bin` point at it, including the pre-0.8 names (`solvecraft`, `solvecraft-cli`)
-//! so an existing pin keeps working. Older trees stay until SolidLauncher is asked to
-//! remove them. A file in
+//! Linux and the BSDs share this layout. The tree lands in
+//! `~/.local/opt/solidcraft-<version>-<os>-<arch>`. Symlinks in `~/.local/bin` point at it,
+//! including the pre-0.8 names (`solvecraft`, `solvecraft-cli`) so an existing pin keeps
+//! working. Older trees stay until SolidLauncher is asked to remove them. A file in
 //! `~/.local/bin` that is not already a symlink is left alone.
 
 use std::fs::{self, File};
 use std::io::{self, copy};
-use std::path::{Component, Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use flate2::read::GzDecoder;
-use semver::Version;
-use solid_launcher_core::parse_version;
 use tar::Archive;
 
-const MAX_UNPACKED: u64 = 1024 * 1024 * 1024;
+use solid_launcher_core::PackageKind;
 
-/// A SolidCraft tree this launcher can open.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Installed {
-    pub version: Version,
-    pub root: PathBuf,
-    pub binary: PathBuf,
-}
+use super::{safe_parts, version_from_dir, Installed, RemovedCopies, MAX_UNPACKED};
 
-pub fn home_dir() -> Result<PathBuf, String> {
-    dirs::home_dir().ok_or_else(|| "no home directory".to_string())
+/// `~/.local/opt` holds one directory per version, so older ones can be swept up.
+pub(super) const KEEPS_OLD_VERSIONS: bool = true;
+
+/// Unpack a verified package under `home`.
+///
+/// The official tarball is the only format installed here. It is the one that unpacks into
+/// the home directory with no root password, which is how a hand install of SolidCraft is
+/// already laid out. An AppImage is a single file with no such tree, so it is refused
+/// rather than installed into a shape the rest of this backend cannot find again.
+pub(super) fn install_archive(
+    archive: &Path,
+    home: &Path,
+    kind: PackageKind,
+) -> Result<Installed, String> {
+    if kind != PackageKind::TarGz {
+        return Err(format!(
+            "not supported yet: installing a {} on this system. SolidLauncher installs the official tarball.",
+            kind.label()
+        ));
+    }
+    install_tarball(archive, home)
 }
 
 /// The copy `~/.local/bin/solidcraft` currently points at, when that link is one of ours.
-pub fn detect(home: &Path) -> Option<Installed> {
+pub(super) fn detect(home: &Path) -> Option<Installed> {
     let link = home.join(".local/bin/solidcraft");
     let target = fs::read_link(&link).ok()?;
     let absolute = if target.is_absolute() {
@@ -51,7 +62,7 @@ pub fn detect(home: &Path) -> Option<Installed> {
 }
 
 /// Unpack `archive` under `home` and point the launchers at it.
-pub fn install_tarball(archive: &Path, home: &Path) -> Result<Installed, String> {
+pub(super) fn install_tarball(archive: &Path, home: &Path) -> Result<Installed, String> {
     let opt = home.join(".local/opt");
     fs::create_dir_all(&opt)
         .map_err(|err| format!("could not create {} ({err})", opt.display()))?;
@@ -92,7 +103,7 @@ pub fn install_tarball(archive: &Path, home: &Path) -> Result<Installed, String>
     })
 }
 
-pub fn launch(binary: &Path) -> Result<(), String> {
+pub(super) fn launch(binary: &Path) -> Result<(), String> {
     if !binary.is_file() {
         return Err("SolidCraft is not installed".to_string());
     }
@@ -113,16 +124,6 @@ pub fn launch(binary: &Path) -> Result<(), String> {
             .map_err(|err| format!("could not open SolidCraft ({err})")),
         Err(err) => Err(format!("could not open SolidCraft ({err})")),
     }
-}
-
-fn version_from_dir(name: &str) -> Option<Version> {
-    let rest = name.strip_prefix("solidcraft-")?;
-    for suffix in ["-linux-x86_64", "-linux-aarch64", "-freebsd-x86_64"] {
-        if let Some(version) = rest.strip_suffix(suffix) {
-            return parse_version(version);
-        }
-    }
-    None
 }
 
 fn extract(archive: &Path, staging: &Path) -> Result<String, String> {
@@ -200,31 +201,6 @@ fn extract(archive: &Path, staging: &Path) -> Result<String, String> {
         set_executable(&legacy)?;
     }
     Ok(top)
-}
-
-fn safe_parts(path: &Path) -> Result<Vec<String>, String> {
-    if path.is_absolute() {
-        return Err("the archive contains an absolute path".to_string());
-    }
-    let mut parts = Vec::new();
-    for component in path.components() {
-        match component {
-            Component::Normal(part) => {
-                let text = part.to_str().ok_or_else(|| {
-                    "the archive has a path SolidLauncher will not use".to_string()
-                })?;
-                if text.is_empty() || text == "." || text == ".." || text.contains('\0') {
-                    return Err("the archive path escapes its folder".to_string());
-                }
-                parts.push(text.to_string());
-            }
-            Component::CurDir => {}
-            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
-                return Err("the archive path escapes its folder".to_string());
-            }
-        }
-    }
-    Ok(parts)
 }
 
 fn set_executable(path: &Path) -> Result<(), String> {
@@ -391,19 +367,12 @@ X-Flatpak-RenamedFrom=ai.storyteller.solvecraft.desktop;\n",
     Ok(())
 }
 
-/// Older SolidCraft trees this launcher may delete, and why a tree was skipped.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RemovedCopies {
-    pub removed: Vec<String>,
-    pub errors: Vec<String>,
-}
-
 /// Delete older `~/.local/opt/solidcraft-<version>-linux-*` trees.
 ///
 /// The tree `~/.local/bin/solidcraft` points at is kept. Anything that is not a
 /// SolidCraft version directory, including a directory with no `bin/solidcraft`,
 /// is left alone. If that symlink is missing, nothing is deleted.
-pub fn remove_old_copies(home: &Path) -> RemovedCopies {
+pub(super) fn remove_old_copies(home: &Path) -> RemovedCopies {
     let mut removed = Vec::new();
     let mut errors = Vec::new();
     let Some(active) = detect(home) else {
