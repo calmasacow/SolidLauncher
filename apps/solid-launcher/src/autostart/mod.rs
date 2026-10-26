@@ -92,6 +92,18 @@ mod tests {
         dir
     }
 
+    /// A stand-in for the installed launcher, which has to exist on disk.
+    fn program(dir: &std::path::Path) -> std::path::PathBuf {
+        let exe = dir.join(if cfg!(windows) {
+            "solid-launcher.exe"
+        } else {
+            "solid-launcher"
+        });
+        let _ = std::fs::create_dir_all(dir);
+        let _ = std::fs::write(&exe, b"not really a program");
+        exe
+    }
+
     /// What every backend has to do, whatever its entry looks like inside.
     ///
     /// The contents are a backend's own business — a desktop file, a plist, a binary
@@ -100,10 +112,13 @@ mod tests {
     fn the_login_entry_is_written_and_removed_with_the_option() {
         let dir = scratch("apply");
         let path = dir.join("entry");
-        let exe = std::path::Path::new("/home/someone/bin/solid-launcher");
+        // A real file: a Windows shortcut records what it points at, so the backend reads
+        // the program rather than taking the path on trust. In use this is
+        // `current_exe()`, which is always there.
+        let exe = program(&dir);
         let mut settings = Settings::default();
 
-        if let Err(err) = apply_at(&path, exe, &settings) {
+        if let Err(err) = apply_at(&path, &exe, &settings) {
             // A platform that cannot write one yet says so, and leaves nothing behind.
             assert!(err.contains("not supported yet"), "{err}");
             assert!(!path.exists());
@@ -114,14 +129,14 @@ mod tests {
 
         // Writing it again replaces it rather than failing on a file already there.
         settings.start_minimized = false;
-        assert!(apply_at(&path, exe, &settings).is_ok());
+        assert!(apply_at(&path, &exe, &settings).is_ok());
         assert!(path.is_file());
 
         settings.start_on_login = false;
-        assert!(apply_at(&path, exe, &settings).is_ok());
+        assert!(apply_at(&path, &exe, &settings).is_ok());
         assert!(!path.exists());
         // Turning it off twice is not an error.
-        assert!(apply_at(&path, exe, &settings).is_ok());
+        assert!(apply_at(&path, &exe, &settings).is_ok());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
