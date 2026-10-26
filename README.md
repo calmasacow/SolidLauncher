@@ -4,23 +4,28 @@
   <img src="docs/screenshot.png" width="609" alt="SolidLauncher, with SolidCraft 0.23.0 up to date">
 </p>
 
-SolidLauncher downloads, installs, updates, and opens [SolidCraft](https://solidcraft.io). It reads the latest release from [GitHub](https://github.com/tangency-labs/solidcraft), picks the Linux build for this machine, and checks the file against the SHA-256 published with that release before anything is unpacked.
+SolidLauncher downloads, installs, updates, and opens [SolidCraft](https://solidcraft.io). It reads the latest release from [GitHub](https://github.com/tangency-labs/solidcraft), picks the build for this machine, and checks the file against the SHA-256 published with that release before anything is unpacked.
 
 The window opens floating at 600×400. Its × hides it and leaves an icon in the status bar. Quit is in that icon's menu.
 
 ## Install
 
-The [latest release](https://github.com/calmasacow/SolidLauncher/releases/latest) is a Linux x86_64 tarball. It installs into your home directory and does not ask for a password.
+The [latest release](https://github.com/calmasacow/SolidLauncher/releases/latest) has a tarball per machine. Each installs into your home directory and does not ask for a password.
 
-Download `solid-launcher-<version>-linux-x86_64.tar.gz` and `SHA256SUMS.txt` into the same folder. Then:
+| Machine | File |
+|---|---|
+| Linux, 64-bit Intel or AMD | `solid-launcher-<version>-linux-x86_64.tar.gz` |
+| Linux, 64-bit ARM | `solid-launcher-<version>-linux-aarch64.tar.gz` |
+
+`uname -m` prints your architecture. Download that file and `SHA256SUMS.txt` into the same folder. Then:
 
 ```sh
-sha256sum -c SHA256SUMS.txt
+sha256sum --ignore-missing -c SHA256SUMS.txt
 mkdir -p ~/.local
 tar -C ~/.local --strip-components=1 -xzf solid-launcher-<version>-linux-x86_64.tar.gz
 ```
 
-`sha256sum` prints `OK` when the tarball matches the published checksum. The unpack puts:
+The check prints `OK` when the tarball matches the published checksum. The unpack puts:
 
 ```text
 ~/.local/bin/solid-launcher
@@ -46,10 +51,10 @@ SolidCraft is not in this tarball. **Update** in the window installs it when you
 
 ## Where SolidCraft is installed
 
-The Linux package is the official tarball. It is unpacked into the home directory, the same layout as installing it by hand, and it does not ask for a password.
+SolidLauncher installs the official tarball. It is unpacked into the home directory, the same layout as installing it by hand, and it does not ask for a password.
 
 ```text
-~/.local/opt/solidcraft-<version>-linux-<arch>/
+~/.local/opt/solidcraft-<version>-<os>-<arch>/
 ~/.local/bin/solidcraft
 ~/.local/bin/solidcraft-cli
 ~/.local/bin/solvecraft
@@ -83,6 +88,8 @@ The tray icon is a StatusNotifierItem named `solid-launcher`. Left click shows o
 ## Build
 
 Rust 1.85 or newer.
+
+Both architectures are built and released from CI; see `.github/workflows/release.yml`.
 
 ```sh
 cargo run -p solid-launcher             # window, and an icon in the bar

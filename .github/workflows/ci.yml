@@ -14,19 +14,34 @@ env:
 
 jobs:
   test:
-    name: Test
-    runs-on: ubuntu-24.04
+    name: Test ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-24.04, lint: true }
+          - { arch: aarch64, runner: ubuntu-24.04-arm, lint: false }
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ci-${{ matrix.arch }}
       - name: System libraries
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libxkbcommon-dev
       - name: Format
+        if: matrix.lint
         run: cargo fmt --all --check
       - name: Test
         run: cargo test --workspace --locked --all-targets
       - name: Clippy
+        if: matrix.lint
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Build and smoke test
+        run: |
+          cargo build --release --locked -p solid-launcher
+          target/release/solid-launcher --help
+
