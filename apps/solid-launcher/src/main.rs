@@ -36,7 +36,7 @@ use std::time::Duration;
 use eframe::egui;
 use solid_launcher_native::{
     check_status, detect, home_dir, install_latest, keeps_old_versions, launch, remove_old_copies,
-    Status,
+    Installed, Status,
 };
 
 fn main() -> eframe::Result<()> {
@@ -253,7 +253,9 @@ struct Launcher {
     tray: Option<tray::Tray>,
     status: Option<Status>,
     installed_label: Option<String>,
-    binary: Option<std::path::PathBuf>,
+    /// The SolidCraft on this machine, whoever installed it. Kept whole rather than as a
+    /// path: opening a Flatpak and sweeping old copies both depend on how it got here.
+    installed: Option<Installed>,
     busy: bool,
     headline: String,
     error: Option<String>,
@@ -298,7 +300,7 @@ impl Launcher {
             tray: None,
             status: None,
             installed_label,
-            binary: found.map(|item| item.binary),
+            installed: found,
             busy: true,
             headline,
             error: settings_note.or(autostart_note),
@@ -352,15 +354,15 @@ impl Launcher {
     fn remember_local(&mut self) {
         let found = home_dir().ok().and_then(|home| detect(&home));
         self.installed_label = found.as_ref().map(|item| item.version.to_string());
-        self.binary = found.map(|item| item.binary);
+        self.installed = found;
     }
 
     fn open_solidcraft(&mut self) {
-        let Some(binary) = self.binary.clone() else {
+        let Some(installed) = self.installed.clone() else {
             self.error = Some("SolidCraft is not installed".to_string());
             return;
         };
-        match launch(&binary) {
+        match launch(&installed) {
             Ok(()) => {
                 self.error = None;
                 self.headline = "SolidCraft is opening.".to_string();
@@ -715,6 +717,11 @@ fn draw(ctx: &egui::Context, launcher: &mut Launcher) -> bool {
                             .as_deref()
                             .unwrap_or("not installed")
                     ));
+                    // Say where a copy came from when SolidLauncher did not put it there,
+                    // so "Update" replacing it is never a surprise.
+                    if let Some(note) = foreign_install_note(launcher.installed.as_ref()) {
+                        ui.monospace(format!("            {note}"));
+                    }
                     if let Some(status) = &launcher.status {
                         ui.monospace(format!("Latest      {}", status.latest));
                         ui.monospace(format!("Download    {}", status.asset));
@@ -734,7 +741,7 @@ fn draw(ctx: &egui::Context, launcher: &mut Launcher) -> bool {
                     }
                     ui.add_space(16.0);
                     ui.horizontal(|ui| {
-                        let installed = launcher.binary.is_some();
+                        let installed = launcher.installed.is_some();
                         let can_update = launcher
                             .status
                             .as_ref()
@@ -927,6 +934,15 @@ fn announce_version(status: &Status, already: Option<&str>) -> Option<(String, S
         return None;
     }
     Some((status.latest.clone(), installed))
+}
+
+/// How an installed SolidCraft got here, when it was not this launcher.
+///
+/// `None` for our own install: saying so on every line would be noise, and the common
+/// case needs no explanation.
+fn foreign_install_note(installed: Option<&Installed>) -> Option<&'static str> {
+    let origin = installed?.origin;
+    (!origin.is_ours()).then(|| origin.label())
 }
 
 fn headline(status: &Status) -> String {

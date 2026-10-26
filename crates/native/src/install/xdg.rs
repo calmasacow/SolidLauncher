@@ -16,7 +16,7 @@ use tar::Archive;
 
 use solid_launcher_core::PackageKind;
 
-use super::{safe_parts, version_from_dir, Installed, RemovedCopies, MAX_UNPACKED};
+use super::{found, safe_parts, version_from_dir, Installed, Origin, RemovedCopies, MAX_UNPACKED};
 
 /// `~/.local/opt` holds one directory per version, so older ones can be swept up.
 pub(super) const KEEPS_OLD_VERSIONS: bool = true;
@@ -44,8 +44,18 @@ pub(super) fn install_archive(
     install_tarball(archive, home)
 }
 
-/// The copy `~/.local/bin/solidcraft` currently points at, when that link is one of ours.
+/// The SolidCraft on this machine, whoever installed it.
+///
+/// Our own install is looked for first, because `~/.local/bin` comes before `/usr/bin` on
+/// a normal `PATH`: when both exist, ours is the one that runs. Failing that, the package
+/// managers are asked, so a copy from `apt`, `dnf` or Flathub is found rather than
+/// reported as nothing and then installed over.
 pub(super) fn detect(home: &Path) -> Option<Installed> {
+    launcher_install(home).or_else(found::system_install)
+}
+
+/// The copy `~/.local/bin/solidcraft` currently points at, when that link is one of ours.
+fn launcher_install(home: &Path) -> Option<Installed> {
     let link = home.join(".local/bin/solidcraft");
     let target = fs::read_link(&link).ok()?;
     let absolute = if target.is_absolute() {
@@ -61,6 +71,7 @@ pub(super) fn detect(home: &Path) -> Option<Installed> {
         version,
         root,
         binary,
+        origin: Origin::Launcher,
     })
 }
 
@@ -103,10 +114,16 @@ pub(super) fn install_tarball(archive: &Path, home: &Path) -> Result<Installed, 
         version,
         root: final_dir,
         binary,
+        origin: Origin::Launcher,
     })
 }
 
-pub(super) fn launch(binary: &Path) -> Result<(), String> {
+pub(super) fn launch(installed: &Installed) -> Result<(), String> {
+    // A Flatpak is not a file on disk to run: the runtime starts it by its identifier.
+    if installed.origin == Origin::Flatpak {
+        return launch_flatpak();
+    }
+    let binary = &installed.binary;
     if !binary.is_file() {
         return Err("SolidCraft is not installed".to_string());
     }
@@ -127,6 +144,17 @@ pub(super) fn launch(binary: &Path) -> Result<(), String> {
             .map_err(|err| format!("could not open SolidCraft ({err})")),
         Err(err) => Err(format!("could not open SolidCraft ({err})")),
     }
+}
+
+fn launch_flatpak() -> Result<(), String> {
+    Command::new("flatpak")
+        .args(["run", "ai.storyteller.solidcraft"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|err| format!("could not open the SolidCraft Flatpak ({err})"))
 }
 
 fn extract(archive: &Path, staging: &Path) -> Result<String, String> {
@@ -378,9 +406,11 @@ X-Flatpak-RenamedFrom=ai.storyteller.solvecraft.desktop;\n",
 pub(super) fn remove_old_copies(home: &Path) -> RemovedCopies {
     let mut removed = Vec::new();
     let mut errors = Vec::new();
-    let Some(active) = detect(home) else {
+    let Some(active) = detect(home).filter(|found| found.origin.is_ours()) else {
+        // Either nothing is installed, or what is installed belongs to a package manager.
+        // Deleting around either would leave dpkg or rpm describing files that are gone.
         errors.push(
-            "SolidCraft is not installed through SolidLauncher, so older copies were left alone."
+            "SolidCraft was not installed through SolidLauncher, so older copies were left alone."
                 .to_string(),
         );
         return RemovedCopies { removed, errors };

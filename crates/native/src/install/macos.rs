@@ -20,7 +20,7 @@ use std::process::{Command, Stdio};
 use semver::Version;
 use solid_launcher_core::PackageKind;
 
-use super::{plist, Installed, RemovedCopies};
+use super::{plist, Installed, Origin, RemovedCopies};
 
 /// The bundle is replaced in place, so there are never older copies to sweep.
 pub(super) const KEEPS_OLD_VERSIONS: bool = false;
@@ -45,6 +45,7 @@ pub(super) fn detect(home: &Path) -> Option<Installed> {
         version,
         root: app,
         binary,
+        origin: Origin::Launcher,
     })
 }
 
@@ -198,7 +199,8 @@ fn unquarantine(app: &Path) {
     }
 }
 
-pub(super) fn launch(binary: &Path) -> Result<(), String> {
+pub(super) fn launch(installed: &Installed) -> Result<(), String> {
+    let binary = &installed.binary;
     if !binary.is_file() {
         return Err("SolidCraft is not installed".to_string());
     }
