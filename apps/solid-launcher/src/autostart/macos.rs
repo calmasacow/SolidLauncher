@@ -56,9 +56,14 @@ fn escape(text: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+pub(super) fn write(path: &Path, exe: &Path, minimized: bool) -> Result<(), String> {
+    std::fs::write(path, entry(exe, minimized))
+        .map_err(|err| format!("could not write {} ({err})", path.display()))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{entry, escape};
+    use super::{entry, entry_path, escape, write, LABEL};
     use std::path::Path;
 
     #[test]
@@ -72,9 +77,46 @@ mod tests {
         assert!(!body.contains("/Users/a&b/"), "{body}");
         assert!(body.contains("<string>--hidden</string>"), "{body}");
     }
-}
 
-pub(super) fn write(path: &Path, exe: &Path, minimized: bool) -> Result<(), String> {
-    std::fs::write(path, entry(exe, minimized))
-        .map_err(|err| format!("could not write {} ({err})", path.display()))
+    #[test]
+    fn the_agent_goes_in_this_users_own_launch_agents_folder() {
+        let Ok(path) = entry_path() else {
+            // No home directory in this environment; nothing to check.
+            return;
+        };
+        assert!(path.is_absolute(), "{}", path.display());
+        assert!(
+            path.ends_with(format!("Library/LaunchAgents/{LABEL}.plist")),
+            "{}",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn the_written_agent_is_a_plist_that_runs_the_program_at_login() {
+        let dir =
+            std::env::temp_dir().join(format!("solid-launcher-launchagent-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(std::fs::create_dir_all(&dir).is_ok());
+        let path = dir.join("agent.plist");
+        let exe =
+            Path::new("/Users/someone/Applications/SolidLauncher.app/Contents/MacOS/SolidLauncher");
+
+        assert!(write(&path, exe, true).is_ok());
+        let body = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(body.starts_with("<?xml"), "{body}");
+        assert!(
+            body.contains(&format!("<string>{LABEL}</string>")),
+            "{body}"
+        );
+        assert!(body.contains("<string>/Users/someone/Applications/SolidLauncher.app/Contents/MacOS/SolidLauncher</string>"), "{body}");
+        assert!(body.contains("<key>RunAtLoad</key>"), "{body}");
+        assert!(body.contains("<string>--hidden</string>"), "{body}");
+
+        // Without "start minimized" the agent passes no arguments at all.
+        assert!(write(&path, exe, false).is_ok());
+        let shown = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(!shown.contains("--hidden"), "{shown}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
