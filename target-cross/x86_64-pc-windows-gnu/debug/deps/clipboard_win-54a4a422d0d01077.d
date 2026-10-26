@@ -1,0 +1,12 @@
+/home/user/solidlauncher/target-cross/x86_64-pc-windows-gnu/debug/deps/clipboard_win-54a4a422d0d01077.d: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/lib.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/options.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/sys.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/types.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/formats.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/html.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/raw.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/utils.rs
+
+/home/user/solidlauncher/target-cross/x86_64-pc-windows-gnu/debug/deps/libclipboard_win-54a4a422d0d01077.rmeta: /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/lib.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/options.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/sys.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/types.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/formats.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/html.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/raw.rs /root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/utils.rs
+
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/lib.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/options.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/sys.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/types.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/formats.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/html.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/raw.rs:
+/root/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/clipboard-win-5.4.3/src/utils.rs:

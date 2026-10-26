@@ -14,11 +14,18 @@ path = "src/main.rs"
 [dependencies]
 eframe.workspace = true
 image = { version = "0.25", default-features = false, features = ["png"] }
+# Notifications: D-Bus on Linux and the BSDs, the notification centre on macOS, toasts
+# on Windows. One call instead of shelling out to notify-send, which only Linux has.
+notify-rust = { version = "4", default-features = false, features = ["z"] }
 serde_json.workspace = true
 solid-launcher-native.workspace = true
 
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 tray-icon = "0.25"
+
+[target.'cfg(windows)'.dependencies]
+# The single-instance handoff listens on loopback, so its secret comes from the system.
+getrandom = "0.3"
 
 # Linux and the BSDs: StatusNotifierItem over D-Bus, so the bar icon needs no GTK.
 [target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))'.dependencies]
