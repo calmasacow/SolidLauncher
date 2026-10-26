@@ -105,15 +105,27 @@ SolidLauncher is a status bar app: it has no Dock icon, and its window opens fro
 
 ## Where SolidCraft is installed
 
-On Linux, SolidLauncher installs the official tarball. It is unpacked into the home directory, the same layout as installing it by hand, and it does not ask for a password.
+On Linux, SolidCraft is published in four formats, and SolidLauncher can install any of them. **Options** has the choice.
+
+| Method | Where it goes | Password |
+|---|---|---|
+| Tarball | `~/.local/opt/solidcraft-<version>-<os>-<arch>/`, with `solidcraft-cli` | no |
+| AppImage | `~/.local/opt/solidcraft-<version>-<os>-<arch>.AppImage`, one file | no |
+| System package (`.deb`) | `apt-get install`, for everyone on the machine | yes, through `pkexec` |
+| System package (`.rpm`) | `rpm -U`, for everyone on the machine | yes, through `pkexec` |
+
+**Automatic** is the default and does two things in order. If SolidCraft is already on the machine — installed by `apt`, `dnf`, Flatpak, or an earlier SolidLauncher — it keeps that format, so an update never quietly swaps one install for another. Otherwise it takes the tarball, because that is the one that needs no password.
+
+The tarball and the AppImage both link into `~/.local/bin`:
 
 ```text
-~/.local/opt/solidcraft-<version>-<os>-<arch>/
 ~/.local/bin/solidcraft
 ~/.local/bin/solidcraft-cli
 ~/.local/bin/solvecraft
 ~/.local/bin/solvecraft-cli
 ```
+
+A `.solid-launcher-method` file in `~/.local/opt` records which format was used. A Flatpak install is found and opened with `flatpak run`, but not updated: use the software centre or `flatpak update` for that.
 
 On Windows there are two ways, and **Options** chooses between them. The portable zip is the default, because it matches the promise the Linux install makes: one user, no password.
 
@@ -148,6 +160,7 @@ Options sits beside the status line. The three checkboxes are stored in `~/.conf
 |---|---|---|
 | Start on login | on | Writes `~/.config/autostart/solid-launcher.desktop`. Turning it off removes that file. |
 | Start minimized | on | Login starts with `--hidden`, so no window is mapped until the icon is clicked. |
+| Install SolidCraft as | Automatic | Which of the four Linux formats an install or update uses. Linux only; elsewhere there is one format and the choice is not shown. |
 | Remove old versions | off | Deletes older `~/.local/opt/solidcraft-*` trees that contain `bin/solidcraft`. Never the copy linked from `~/.local/bin/solidcraft`, and never when SolidCraft was not installed through SolidLauncher. |
 
 The tray icon is a StatusNotifierItem named `solid-launcher`. Left click shows or hides the window. The menu is Show SolidLauncher, Check for updates, and Quit.
