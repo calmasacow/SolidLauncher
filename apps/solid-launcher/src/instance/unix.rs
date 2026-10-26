@@ -1,21 +1,16 @@
-//! One SolidLauncher in the session. A second start asks the first to show its window.
+//! One SolidLauncher per session, over a Unix socket in the runtime directory.
+//!
+//! The socket's permissions are the access control: only this user can connect to it.
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-pub enum Claim {
-    /// This process owns the tray.
-    Primary { shows: Receiver<()> },
-    /// Another SolidLauncher is already running and was asked to show its window.
-    Secondary,
-    /// The socket could not be taken. Run anyway, without the single-instance handoff.
-    Alone,
-}
+use super::Claim;
 
-pub fn claim(wake: impl Fn() + Send + 'static) -> Claim {
+pub(super) fn claim(wake: impl Fn() + Send + 'static) -> Claim {
     let Some(path) = socket_path() else {
         return Claim::Alone;
     };
