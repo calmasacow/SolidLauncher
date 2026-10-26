@@ -3,6 +3,10 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Publishing a release from github.com creates the tag there rather than by a push, so
+  # that path needs its own trigger. Both end up in the same `publish` job below.
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -229,12 +233,21 @@ jobs:
           cat SHA256SUMS.txt
           notes=$(mktemp)
           sed "s/@VERSION@/${VERSION}/g" "$GITHUB_WORKSPACE/packaging/unix/install.md" > "$notes"
-          gh release create "$GITHUB_REF_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "SolidLauncher ${VERSION}" \
-            --generate-notes \
-            --notes "$(cat "$notes")" \
-            solid-launcher-*.tar.gz \
-            solid-launcher-*.zip \
-            solid-launcher-*.msi \
-            SHA256SUMS.txt
+          files=(solid-launcher-*.tar.gz solid-launcher-*.zip solid-launcher-*.msi SHA256SUMS.txt)
+          # A release made from the browser already exists by the time this runs, and
+          # `gh release create` would fail on it. Attach the files to it instead, and
+          # leave whatever notes were written there alone.
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME exists; uploading the files to it"
+            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "SolidLauncher ${VERSION}" \
+              --generate-notes \
+              --notes "$(cat "$notes")" \
+              "${files[@]}"
+          fi
+          # Either way the release must end up carrying every file.
+          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --json assets --jq '.assets | length')" -eq "${#files[@]}"
