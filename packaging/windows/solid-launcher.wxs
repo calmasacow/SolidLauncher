@@ -73,6 +73,8 @@
                     Name="SolidLauncher"
                     Description="Install, update and open SolidCraft"
                     WorkingDirectory="INSTALLFOLDER"
+                    Icon="SolidLauncherIcon"
+                    IconIndex="0"
                     Advertise="yes" />
         </File>
       </Component>
