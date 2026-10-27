@@ -91,7 +91,7 @@ Compare that against `SHA256SUMS.txt`. The first run shows a SmartScreen warning
 
 A `.zip` is published beside the `.msi` for anyone who would rather unpack it by hand, or whose machine will not run an installer. It holds the same `solid-launcher.exe`.
 
-The Start Menu entry, Explorer and the task switcher take their icon from the executable itself, which carries one; the icon beside the running window and the one in the notification area come from the program as it runs. Windows draws the title bar, so the window has no close button of its own there — the one in the title bar closes it to the notification area, same as everywhere else.
+The Start Menu entry takes its icon from the installer, which names it with a `.ico` extension so Windows can read it back; Explorer and the task switcher take theirs from the executable itself, which carries one; the icon beside the running window and the one in the notification area come from the program as it runs. Windows draws the title bar, so the window has no close button of its own there — the one in the title bar closes it to the notification area, same as everywhere else.
 
 **What the installer checks.** It refuses to install on anything older than Windows 10 and says so, rather than installing something that will not start. It does *not* check for the Visual C++ runtime, because there is nothing to check: the program is linked with a static C runtime, so `VCRUNTIME140.dll` is not needed. The graphics driver cannot be checked by an installer at all, so the Windows build draws through DirectX 12 instead of OpenGL — that works even on a machine running Microsoft's Basic Display Adapter, whose OpenGL is too old for the renderer the other platforms use.
 

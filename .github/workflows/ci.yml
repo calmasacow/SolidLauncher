@@ -144,6 +144,44 @@ jobs:
           packaging/windows/package.ps1 -Version 0.0.0 -Arch "${{ matrix.arch }}" `
             -Binary "target/${{ matrix.target }}/release/solid-launcher.exe"
           Get-Item dist/solid-launcher-*.msi | ForEach-Object { Write-Host $_.Name $_.Length }
+      # The Start Menu entry showed a blank page because the icon's name in the MSI had
+      # no .ico extension: Windows Installer unpacks it under that name and the shell
+      # cannot read a file with no extension. Nothing about the build said so, so the
+      # finished installer is asked what it actually contains.
+      - name: Check the installer really carries a usable icon
+        if: matrix.arch == 'x64'
+        shell: pwsh
+        run: |
+          $msi = (Get-Item dist/solid-launcher-*.msi).FullName
+          $installer = New-Object -ComObject WindowsInstaller.Installer
+          $db = $installer.GetType().InvokeMember(
+            'OpenDatabase', 'InvokeMethod', $null, $installer, @($msi, 0))
+          $view = $db.GetType().InvokeMember(
+            'OpenView', 'InvokeMethod', $null, $db, @('SELECT `Name`, `Data` FROM `Icon`'))
+          $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null)
+          $found = @()
+          while ($true) {
+            $row = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+            if ($null -eq $row) { break }
+            $name = $row.GetType().InvokeMember('StringData', 'GetProperty', $null, $row, @(1))
+            $size = $row.GetType().InvokeMember('DataSize', 'GetProperty', $null, $row, @(2))
+            Write-Host "icon in the installer: $name ($size bytes)"
+            $found += [pscustomobject]@{ Name = $name; Size = $size }
+          }
+          if ($found.Count -eq 0) {
+            Write-Host '::error::the installer carries no icon at all'; exit 1
+          }
+          foreach ($icon in $found) {
+            if ($icon.Name -notmatch '\.(ico|exe)$') {
+              Write-Host "::error::icon '$($icon.Name)' has no .ico or .exe extension, so the shell cannot read it"
+              exit 1
+            }
+            if ($icon.Size -lt 1024) {
+              Write-Host "::error::icon '$($icon.Name)' is only $($icon.Size) bytes"
+              exit 1
+            }
+          }
+          Write-Host 'the installer carries a usable icon'
       - name: Keep the installer, so this branch can be installed and tried
         uses: actions/upload-artifact@v4
         with:
