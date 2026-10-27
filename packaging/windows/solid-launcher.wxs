@@ -73,7 +73,7 @@
                     Name="SolidLauncher"
                     Description="Install, update and open SolidCraft"
                     WorkingDirectory="INSTALLFOLDER"
-                    Icon="SolidLauncherIcon"
+                    Icon="SolidLauncherIcon.ico"
                     IconIndex="0"
                     Advertise="yes" />
         </File>
@@ -114,8 +114,16 @@
 
     <!-- ===== interface ======================================================== -->
 
-    <Icon Id="SolidLauncherIcon" SourceFile="$(var.IconPath)" />
-    <Property Id="ARPPRODUCTICON" Value="SolidLauncherIcon" />
+    <!--
+      The id has to end in .ico. Windows Installer uses it as the file name when it
+      unpacks the icon into its own store, and the shell works out the format from that
+      extension: without one, the unpacked file has no extension, nothing can read it,
+      and every place that asks for the icon draws a blank page instead. This is why the
+      Start Menu entry had no icon even once the executable carried one — an advertised
+      shortcut takes its icon from here, not from the program it points at.
+    -->
+    <Icon Id="SolidLauncherIcon.ico" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="SolidLauncherIcon.ico" />
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/calmasacow/SolidLauncher" />
     <Property Id="ARPNOREPAIR" Value="1" />
 
