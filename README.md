@@ -103,6 +103,14 @@ shasum -a 256 -c SHA256SUMS.txt --ignore-missing
 
 SolidLauncher is a status bar app: it has no Dock icon, and its window opens from the bar icon. If the release was not signed, the first start needs a right-click on the app and then **Open**; see [docs/signing.md](docs/signing.md).
 
+## Seeing and removing what is installed
+
+**Manage…** lists every SolidCraft on the computer, with where each one lives and which of them opens when you press **Open**. Tick the ones to get rid of and press **Delete**.
+
+The copy in use can be removed like any other. That is deliberate: it is how you move from one format to another without waiting for a release, since **Automatic** otherwise keeps the format already there. Removing it takes the `~/.local/bin` links and the desktop entry with it, so nothing is left pointing at a program that is gone; install again afterwards to get SolidCraft back.
+
+A copy SolidLauncher did not install is listed but cannot be ticked. A `.deb` or `.rpm` is handed to the package manager, which asks for a password. A Flatpak, or a SolidCraft someone unpacked by hand, says so and leaves itself alone: removing those belongs to whatever put them there.
+
 ## Where SolidCraft is installed
 
 On Linux, SolidCraft is published in four formats, and SolidLauncher can install any of them. **Options** has the choice.

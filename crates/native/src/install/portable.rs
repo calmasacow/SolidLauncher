@@ -20,7 +20,7 @@ use super::{version_from_dir, zip, Installed, Origin, RemovedCopies};
 /// The program the window opens, and the file that proves a directory holds a real build.
 pub(super) const EXE: &str = "solidcraft.exe";
 /// Names the directory in use. One line, no path: a marker, not a redirect.
-const CURRENT: &str = "current";
+pub(super) const CURRENT: &str = "current";
 /// The packaged zip's top folder carries this; the installed directory does not, so that
 /// [`version_from_dir`] can read it.
 const PORTABLE_SUFFIX: &str = "-portable";
@@ -42,6 +42,33 @@ pub(super) fn detect(root: &Path) -> Option<Installed> {
         binary,
         origin: Origin::Launcher,
     })
+}
+
+/// Every portable copy under `root`, whether or not `current` points at it.
+pub(super) fn list(root: &Path) -> Vec<Installed> {
+    let mut items = Vec::new();
+    let Ok(entries) = fs::read_dir(root) else {
+        return items;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let Some(version) = version_from_dir(name) else {
+            continue;
+        };
+        let binary = path.join(EXE);
+        if binary.is_file() {
+            items.push(Installed {
+                version,
+                root: path,
+                binary,
+                origin: Origin::Launcher,
+            });
+        }
+    }
+    items
 }
 
 /// Unpack the portable zip under `root` and point `current` at it.
@@ -152,7 +179,7 @@ pub(super) fn remove_old(root: &Path) -> RemovedCopies {
 
 #[cfg(test)]
 mod tests {
-    use super::{detect, install, remove_old, EXE};
+    use super::{detect, install, list, remove_old, EXE};
     use std::io::Write;
     use std::path::{Path, PathBuf};
 
@@ -202,6 +229,27 @@ mod tests {
 
         let found = detect(&root).expect("detect");
         assert_eq!(found, installed);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn lists_every_copy_installed_and_not_just_the_one_in_use() {
+        let dir = scratch("list");
+        let root = dir.join("SolidCraft");
+        for version in ["0.22.1", "0.23.0"] {
+            let archive = dir.join(format!("portable-{version}.zip"));
+            portable_zip(&archive, version);
+            install(&archive, &root).expect("install");
+        }
+        // A folder that is not a SolidCraft version, to show it is passed over.
+        std::fs::create_dir_all(root.join("notes")).expect("notes");
+
+        let mut found: Vec<String> = list(&root)
+            .into_iter()
+            .map(|item| item.version.to_string())
+            .collect();
+        found.sort();
+        assert_eq!(found, ["0.22.1", "0.23.0"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

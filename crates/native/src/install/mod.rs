@@ -12,6 +12,7 @@
 //!
 //! Nothing here asks for a password: every backend installs for the current user only.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use semver::Version;
@@ -159,6 +160,38 @@ pub struct RemovedCopies {
     pub errors: Vec<String>,
 }
 
+impl Installed {
+    /// How this copy is described in a list of them: the version and where it lives.
+    pub fn label(&self) -> String {
+        format!("{} — {}", self.version, self.origin.label())
+    }
+
+    /// Whether removing this copy is something the launcher can do.
+    ///
+    /// A copy it installed, yes. A system package, yes, through the package manager and a
+    /// password. A Flatpak or a copy that was already here, no: say so rather than delete
+    /// files that belong to something else.
+    pub fn removable(&self) -> bool {
+        matches!(self.origin, Origin::Launcher | Origin::Deb | Origin::Rpm)
+    }
+}
+
+/// Every SolidCraft on this machine, and which one would be opened.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Installs {
+    /// Newest first, so the one most people want is at the top.
+    pub items: Vec<Installed>,
+    /// The `root` of the copy [`detect`] returns, when there is one.
+    pub active: Option<PathBuf>,
+}
+
+impl Installs {
+    /// Whether `item` is the copy that opens when SolidCraft is opened.
+    pub fn is_active(&self, item: &Installed) -> bool {
+        self.active.as_deref() == Some(item.root.as_path())
+    }
+}
+
 pub fn home_dir() -> Result<PathBuf, String> {
     dirs::home_dir().ok_or_else(|| "no home directory".to_string())
 }
@@ -196,6 +229,53 @@ pub fn launch(installed: &Installed) -> Result<(), String> {
 /// Delete SolidCraft trees older than the one in use.
 pub fn remove_old_copies(home: &Path) -> RemovedCopies {
     backend::remove_old_copies(home)
+}
+
+/// Every SolidCraft this launcher can find, newest first.
+///
+/// This is what the window lists when someone asks what is installed. It includes copies
+/// the launcher did not install, because the point is to show the truth about the machine;
+/// [`Installed::removable`] says which of them it can act on.
+pub fn list(home: &Path) -> Installs {
+    let mut installs = backend::list(home);
+    installs.items.sort_by(|left, right| {
+        right
+            .version
+            .cmp(&left.version)
+            // Where two entries describe the same files, keep the one that knows how they
+            // got here: an entry found on PATH alone says only that something is there.
+            .then_with(|| right.origin.is_ours().cmp(&left.origin.is_ours()))
+            .then_with(|| left.root.cmp(&right.root))
+    });
+    // One row per copy on disk. Two entries can name the same files: `~/.local/bin` is on
+    // PATH, so the search for a SolidCraft nobody claims finds this launcher's own symlink
+    // and would list the copy it points at a second time, as though a stranger had put it
+    // there. Following the links settles which rows are really the same thing.
+    let mut seen = std::collections::HashSet::new();
+    installs.items.retain(|item| {
+        seen.insert(fs::canonicalize(&item.binary).unwrap_or_else(|_| item.binary.clone()))
+    });
+    installs
+}
+
+/// Delete one installed SolidCraft.
+///
+/// Removing the copy currently in use is allowed: that is how someone switches from the
+/// tarball to the AppImage without waiting for a release. The links in `~/.local/bin` and
+/// the desktop entry go with it, so nothing is left pointing at a file that is gone.
+pub fn remove(home: &Path, item: &Installed) -> Result<(), String> {
+    if !item.removable() {
+        return Err(format!(
+            "{} was not installed by SolidLauncher, so it is not SolidLauncher's to remove. {}",
+            item.version,
+            match item.origin {
+                Origin::Flatpak =>
+                    "Remove it with `flatpak uninstall ai.storyteller.solidcraft`, or from your software centre.",
+                _ => "Remove it the way it was installed.",
+            }
+        ));
+    }
+    backend::remove(home, item)
 }
 
 /// The `<os>-<arch>` token the release names this machine's build with.

@@ -16,7 +16,9 @@ use tar::Archive;
 
 use solid_launcher_core::PackageKind;
 
-use super::{found, safe_parts, version_from_dir, Installed, Origin, RemovedCopies, MAX_UNPACKED};
+use super::{
+    found, safe_parts, version_from_dir, Installed, Installs, Origin, RemovedCopies, MAX_UNPACKED,
+};
 
 /// `~/.local/opt` holds one directory per version, so older ones can be swept up.
 pub(super) const KEEPS_OLD_VERSIONS: bool = true;
@@ -538,6 +540,123 @@ pub(super) fn remove_old_copies(home: &Path) -> RemovedCopies {
     RemovedCopies { removed, errors }
 }
 
+/// Every SolidCraft under this home directory, plus whatever a package manager owns.
+pub(super) fn list(home: &Path) -> Installs {
+    let mut items = Vec::new();
+    let opt = home.join(".local/opt");
+    if let Ok(entries) = fs::read_dir(&opt) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            // An AppImage is one file and a tarball install is a directory with the
+            // binary inside it. The AppImage is tested first: `version_from_dir` reads
+            // the trailing `.AppImage` as part of the architecture and says yes to both.
+            if let Some(version) = super::appimage::version_from_appimage(name) {
+                if path.is_file() {
+                    items.push(Installed {
+                        version,
+                        root: path.clone(),
+                        binary: path,
+                        origin: Origin::Launcher,
+                    });
+                }
+            } else if let Some(version) = version_from_dir(name) {
+                let binary = path.join("bin/solidcraft");
+                if binary.is_file() {
+                    items.push(Installed {
+                        version,
+                        root: path,
+                        binary,
+                        origin: Origin::Launcher,
+                    });
+                }
+            }
+        }
+    }
+    // A system package or a Flatpak lives outside the home directory, so it is asked for
+    // separately. It is listed so the window can say it is there and why it is not
+    // SolidLauncher's to replace.
+    if let Some(system) = found::system_install() {
+        items.push(system);
+    }
+    Installs {
+        items,
+        active: detect(home).map(|found| found.root),
+    }
+}
+
+/// Delete one installed SolidCraft, and anything left pointing at it.
+pub(super) fn remove(home: &Path, item: &Installed) -> Result<(), String> {
+    match item.origin {
+        Origin::Deb => super::syspkg::remove(PackageKind::Deb),
+        Origin::Rpm => super::syspkg::remove(PackageKind::Rpm),
+        Origin::Launcher => {
+            let was_active = detect(home).is_some_and(|active| active.root == item.root);
+            // An AppImage is the file itself; a tarball install is the tree around it.
+            let meta = fs::symlink_metadata(&item.root)
+                .map_err(|err| format!("could not read {} ({err})", item.root.display()))?;
+            if meta.file_type().is_dir() {
+                fs::remove_dir_all(&item.root)
+            } else {
+                fs::remove_file(&item.root)
+            }
+            .map_err(|err| format!("could not remove {} ({err})", item.root.display()))?;
+            if was_active {
+                // The links and the desktop entry named the copy that has just gone, so
+                // leaving them would put a dead SolidCraft in the application menu.
+                unlink_commands(home);
+                remove_desktop(home);
+                refresh_caches(home);
+            }
+            Ok(())
+        }
+        Origin::Flatpak | Origin::Unknown => Err(format!(
+            "{} was not installed by SolidLauncher",
+            item.version
+        )),
+    }
+}
+
+/// Drop the `~/.local/bin` links, but only where they are still symlinks of ours.
+fn unlink_commands(home: &Path) {
+    let bin = home.join(".local/bin");
+    for name in [
+        "solidcraft",
+        "solidcraft-cli",
+        "solvecraft",
+        "solvecraft-cli",
+    ] {
+        let link = bin.join(name);
+        // A real file there is someone else's; only a symlink was ours to write.
+        match fs::symlink_metadata(&link) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                if let Err(err) = fs::remove_file(&link) {
+                    eprintln!("SolidLauncher: could not remove {} ({err})", link.display());
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Drop the desktop entries written by [`write_desktop`].
+fn remove_desktop(home: &Path) {
+    let dir = home.join(".local/share/applications");
+    for name in [
+        "ai.storyteller.solidcraft.desktop",
+        "ai.storyteller.solvecraft.desktop",
+    ] {
+        let path = dir.join(name);
+        if path.is_file() {
+            if let Err(err) = fs::remove_file(&path) {
+                eprintln!("SolidLauncher: could not remove {} ({err})", path.display());
+            }
+        }
+    }
+}
+
 fn refresh_caches(home: &Path) {
     let applications = home.join(".local/share/applications");
     if applications.is_dir() {
@@ -569,6 +688,8 @@ fn refresh_caches(home: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+
     use flate2::write::GzEncoder;
     use flate2::Compression;
     use tar::Builder;
@@ -612,6 +733,93 @@ mod tests {
         let again = install_tarball(&archive, &home).expect("second install");
         assert_eq!(again.version, installed.version);
         let _ = fs::remove_dir_all(&home);
+    }
+
+    /// A home directory with a tarball tree, an AppImage, and a folder that is neither.
+    fn home_with_copies(tag: &str) -> PathBuf {
+        let home = std::env::temp_dir().join(format!(
+            "solid-launcher-{tag}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&home);
+        let opt = home.join(".local/opt");
+        let tree = opt.join("solidcraft-0.23.0-linux-x86_64/bin");
+        fs::create_dir_all(&tree).expect("tree");
+        fs::write(tree.join("solidcraft"), b"#!/bin/sh\n").expect("binary");
+        fs::write(
+            opt.join("solidcraft-0.21.0-linux-x86_64.AppImage"),
+            b"#!/bin/sh\n",
+        )
+        .expect("appimage");
+        // Neither a version directory nor an AppImage: it must be passed over.
+        fs::create_dir_all(opt.join("notes")).expect("notes");
+        home
+    }
+
+    #[test]
+    fn lists_a_tarball_tree_and_an_appimage_and_nothing_else() {
+        let home = home_with_copies("list");
+        let found = list(&home);
+        let mut versions: Vec<String> = found
+            .items
+            .iter()
+            .map(|item| item.version.to_string())
+            .collect();
+        versions.sort();
+        assert_eq!(versions, ["0.21.0", "0.23.0"]);
+        // An AppImage is the file itself, not a directory to look inside.
+        let appimage = found
+            .items
+            .iter()
+            .find(|item| item.version.to_string() == "0.21.0")
+            .expect("appimage listed");
+        assert!(appimage.root.is_file(), "{}", appimage.root.display());
+        assert!(found.items.iter().all(|item| item.removable()));
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn removing_the_copy_in_use_takes_its_links_and_desktop_entry_with_it() {
+        let home = home_with_copies("remove-active");
+        let tree = home.join(".local/opt/solidcraft-0.23.0-linux-x86_64");
+        let bin = home.join(".local/bin");
+        fs::create_dir_all(&bin).expect("bin");
+        std::os::unix::fs::symlink(tree.join("bin/solidcraft"), bin.join("solidcraft"))
+            .expect("link");
+        write_desktop(&home, &tree.join("bin/solidcraft")).expect("desktop");
+
+        let found = list(&home);
+        let active = found
+            .items
+            .iter()
+            .find(|item| found.is_active(item))
+            .expect("one of them is in use");
+        assert_eq!(active.version.to_string(), "0.23.0");
+        remove(&home, &active.clone()).expect("remove");
+
+        assert!(!tree.exists());
+        // Left behind, these would put a SolidCraft that is gone in the application menu.
+        assert!(!bin.join("solidcraft").exists());
+        assert!(!home
+            .join(".local/share/applications/ai.storyteller.solidcraft.desktop")
+            .exists());
+        // The other copy is untouched: only what was asked for goes.
+        assert_eq!(list(&home).items.len(), 1);
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_copy_that_is_not_ours_is_listed_but_refused() {
+        let theirs = Installed {
+            version: solid_launcher_core::parse_version("0.23.0").expect("version"),
+            root: PathBuf::from("/usr"),
+            binary: PathBuf::from("/usr/bin/solidcraft"),
+            origin: Origin::Flatpak,
+        };
+        assert!(!theirs.removable());
+        let err = super::super::remove(Path::new("/nowhere"), &theirs).expect_err("refused");
+        assert!(err.contains("flatpak uninstall"), "{err}");
     }
 
     #[test]

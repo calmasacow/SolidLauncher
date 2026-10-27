@@ -20,7 +20,7 @@ use std::process::{Command, Stdio};
 use semver::Version;
 use solid_launcher_core::PackageKind;
 
-use super::{plist, Installed, Origin, RemovedCopies};
+use super::{plist, Installed, Installs, Origin, RemovedCopies};
 
 /// The bundle is replaced in place, so there are never older copies to sweep.
 pub(super) const KEEPS_OLD_VERSIONS: bool = false;
@@ -229,6 +229,32 @@ pub(super) fn launch(installed: &Installed) -> Result<(), String> {
 fn bundle_of(binary: &Path) -> Option<PathBuf> {
     let bundle = binary.parent()?.parent()?.parent()?;
     (bundle.extension().is_some_and(|ext| ext == "app")).then(|| bundle.to_path_buf())
+}
+
+/// The one bundle in `~/Applications`, if it is there.
+///
+/// macOS keeps a single copy: each update replaces it, so this list is never longer
+/// than one.
+pub(super) fn list(home: &Path) -> Installs {
+    let found = detect(home);
+    Installs {
+        active: found.as_ref().map(|item| item.root.clone()),
+        items: found.into_iter().collect(),
+    }
+}
+
+/// Move the bundle to the trash, which is what dragging it out of Applications does.
+pub(super) fn remove(home: &Path, item: &Installed) -> Result<(), String> {
+    let app = installed_app(home);
+    if item.root != app {
+        return Err(format!(
+            "{} is not {}, so SolidLauncher will not remove it",
+            item.root.display(),
+            app.display()
+        ));
+    }
+    std::fs::remove_dir_all(&app)
+        .map_err(|err| format!("could not remove {} ({err})", app.display()))
 }
 
 pub(super) fn remove_old_copies(_home: &Path) -> RemovedCopies {
