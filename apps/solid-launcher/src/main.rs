@@ -25,6 +25,7 @@ mod instance;
 mod notify;
 mod place;
 mod settings;
+mod startup_error;
 mod tray;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -75,7 +76,14 @@ fn main() -> eframe::Result<()> {
     }
 
     let hidden = args.iter().any(|arg| arg == "--hidden");
-    run_gui(hidden)
+    // Nothing here prints anywhere the person can see: a release build on Windows has no
+    // console, and a Start Menu or desktop entry has none either. So a failure to open the
+    // window is written down and notified rather than left to look like nothing happening.
+    if let Err(err) = run_gui(hidden) {
+        startup_error::report(&err.to_string());
+        return Err(err);
+    }
+    Ok(())
 }
 
 fn run_gui(hidden: bool) -> eframe::Result<()> {

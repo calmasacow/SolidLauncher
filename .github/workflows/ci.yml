@@ -114,6 +114,26 @@ jobs:
       - name: Smoke test
         if: matrix.arch == 'x64'
         run: ./target/${{ matrix.target }}/release/solid-launcher.exe --help
+      # --help never opens a window, so it passed all the way through a build whose wgpu
+      # had no Windows backend compiled in: the launcher started, failed to make a
+      # surface and exited before drawing. This starts it for real and fails if it is
+      # not still running, which is what that bug looked like from outside.
+      - name: Open the window, and fail if it does not stay open
+        if: matrix.arch == 'x64'
+        shell: pwsh
+        run: |
+          $exe = "target/${{ matrix.target }}/release/solid-launcher.exe"
+          $app = Start-Process $exe -PassThru
+          Start-Sleep -Seconds 20
+          if ($app.HasExited) {
+            Write-Host "::error::the launcher exited on its own with $($app.ExitCode)"
+            $log = Join-Path $env:USERPROFILE '.config/solid-launcher/last-error.log'
+            if (Test-Path $log) { Write-Host "--- $log ---"; Get-Content $log }
+            else { Write-Host "no $log was written" }
+            exit 1
+          }
+          Write-Host "still running after 20s"
+          Stop-Process -Id $app.Id -Force
       - name: WiX
         run: dotnet tool install --global wix --version 5.0.2
       - name: WiX UI extension
