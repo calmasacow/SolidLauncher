@@ -37,6 +37,13 @@ eframe = { version = "0.31", default-features = false, features = [
     "default_fonts",
     "wgpu",
 ] }
+# eframe's own wgpu dependency asks for the `metal` and `webgpu` backends and nothing
+# else, so on Windows wgpu is built with no backend at all: it finds no adapter, eframe
+# cannot make a surface, and the launcher exits before it draws anything. Naming wgpu
+# here with `dx12` puts that backend back in through feature unification. That is the
+# only Windows backend wgpu 24 offers as a feature of its own, and it is the one wanted:
+# a machine with no graphics driver still reaches it through WARP.
+wgpu = { version = "24", default-features = false, features = ["dx12"] }
 # The single-instance handoff listens on loopback, so its secret comes from the system.
 getrandom = "0.3"
 

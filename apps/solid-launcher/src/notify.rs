@@ -17,16 +17,24 @@ const APP_NAME: &str = "SolidLauncher";
 pub fn update_available(latest: &str, installed: &str) {
     let summary = format!("SolidCraft {latest} is available");
     let body = format!("{installed} is installed. Open SolidLauncher to update.");
-    thread::spawn(move || {
-        let mut notification = notify_rust::Notification::new();
-        notification.appname(APP_NAME).summary(&summary).body(&body);
-        if let Some(icon) = icon() {
-            notification.icon(&icon);
-        }
-        if let Err(err) = notification.show() {
-            eprintln!("SolidLauncher: could not show the update notification ({err})");
-        }
-    });
+    thread::spawn(move || show(&summary, &body));
+}
+
+/// Post a notification and wait for the desktop to take it.
+///
+/// Unlike [`update_available`] this does not return before the notification is away,
+/// because the one caller that needs it is on its way out of the process and a thread
+/// would be killed before it posted. A notification that cannot be shown is reported on
+/// stderr and otherwise ignored.
+pub fn show(summary: &str, body: &str) {
+    let mut notification = notify_rust::Notification::new();
+    notification.appname(APP_NAME).summary(summary).body(body);
+    if let Some(icon) = icon() {
+        notification.icon(&icon);
+    }
+    if let Err(err) = notification.show() {
+        eprintln!("SolidLauncher: could not show a notification ({err})");
+    }
 }
 
 /// The icon to show beside the notification, where the platform takes one from us.
