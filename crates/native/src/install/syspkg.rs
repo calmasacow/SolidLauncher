@@ -34,31 +34,51 @@ pub(super) fn install(archive: &Path, kind: PackageKind) -> Result<(), String> {
             ))
         }
     };
-    authenticate(program, &args)
+    authenticate("install", program, &args)
 }
+
+/// Ask the system package manager to remove SolidCraft, authenticating first.
+pub(super) fn remove(kind: PackageKind) -> Result<(), String> {
+    let (program, args) = match kind {
+        // `-y` so the prompt is the pkexec dialog and not a question nobody can see:
+        // there is no terminal attached to a program started from the desktop.
+        PackageKind::Deb => ("apt-get", vec!["remove", "-y", PACKAGE]),
+        PackageKind::Rpm => ("rpm", vec!["-e", PACKAGE]),
+        other => {
+            return Err(format!(
+                "not a system package: {} cannot be removed this way",
+                other.label()
+            ))
+        }
+    };
+    authenticate("remove", program, &args)
+}
+
+/// The name SolidCraft's `.deb` and `.rpm` are published under.
+const PACKAGE: &str = "solidcraft";
 
 /// Run a command as root through the desktop's authentication prompt.
 ///
 /// `pkexec` is what a graphical program should use: it shows the desktop's own dialog
 /// rather than expecting a terminal, as `sudo` would.
-fn authenticate(program: &str, args: &[&str]) -> Result<(), String> {
+fn authenticate(action: &str, program: &str, args: &[&str]) -> Result<(), String> {
     if which("pkexec").is_none() {
-        return Err(
-            "installing a system package needs pkexec, which is not on this computer. \
-             Choose a different install method in Options, or install the package by hand."
-                .to_string(),
-        );
+        return Err(format!(
+            "to {action} a system package SolidLauncher needs pkexec, which is not on this \
+             computer. Use your package manager directly, or choose a different install \
+             method in Options."
+        ));
     }
     let status = Command::new("pkexec")
         .arg(program)
         .args(args)
         .stdin(Stdio::null())
         .status()
-        .map_err(|err| format!("could not ask for permission to install ({err})"))?;
+        .map_err(|err| format!("could not ask for permission to {action} ({err})"))?;
     match status.code() {
         Some(0) => Ok(()),
         // pkexec's own code for a prompt the user dismissed or failed.
-        Some(126) => Err("the install was cancelled".to_string()),
+        Some(126) => Err(format!("the {action} was cancelled")),
         Some(127) => Err(format!("{program} is not on this computer")),
         Some(code) => Err(format!("{program} stopped with code {code}")),
         None => Err(format!("{program} did not finish")),

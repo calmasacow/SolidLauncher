@@ -36,8 +36,8 @@ use std::time::Duration;
 
 use eframe::egui;
 use solid_launcher_native::{
-    check_status, detect, home_dir, install_latest, keeps_old_versions, launch, remove_old_copies,
-    Installed, Status,
+    check_status, detect, home_dir, install_latest, keeps_old_versions, launch, list, remove,
+    remove_old_copies, Installed, Installs, Status,
 };
 
 fn main() -> eframe::Result<()> {
@@ -223,6 +223,11 @@ enum Event {
     Failed(String),
     /// The hourly check is due. The launch check is separate and already happened.
     Hourly,
+    /// A Manage copies deletion finished: what went, and what would not.
+    Removed {
+        removed: Vec<String>,
+        errors: Vec<String>,
+    },
 }
 
 enum Request {
@@ -274,6 +279,12 @@ struct Launcher {
     closed_to_tray: bool,
     settings: settings::Settings,
     options_open: bool,
+    /// The Manage copies sheet, and what it last found. Loaded when it is opened rather
+    /// than on every frame, because listing them touches the disk.
+    manage_open: bool,
+    manage: Installs,
+    /// The copies ticked for deletion, by their `root`.
+    checked: std::collections::HashSet<std::path::PathBuf>,
     /// The window was moved off the monitor. The process is still in the bar.
     concealed: bool,
     /// Takes the window off the screen, away from the window thread, so a show or hide
@@ -318,6 +329,9 @@ impl Launcher {
             closed_to_tray: false,
             settings,
             options_open: false,
+            manage_open: false,
+            manage: Installs::default(),
+            checked: std::collections::HashSet::new(),
             concealed: false,
             place,
             sweep_after_install: false,
@@ -363,6 +377,56 @@ impl Launcher {
         });
     }
 
+    /// Re-read the installed copies behind the Manage sheet.
+    fn refresh_installs(&mut self) {
+        self.manage = home_dir().ok().map(|home| list(&home)).unwrap_or_default();
+        // A copy that has gone must not stay ticked, or the next Delete acts on nothing.
+        let present: std::collections::HashSet<_> = self
+            .manage
+            .items
+            .iter()
+            .map(|item| item.root.clone())
+            .collect();
+        self.checked.retain(|root| present.contains(root));
+    }
+
+    /// Delete the ticked copies, off the window thread: a system package asks for a
+    /// password, and that dialog must not freeze the window behind it.
+    fn spawn_remove(&mut self) {
+        let targets: Vec<Installed> = self
+            .manage
+            .items
+            .iter()
+            .filter(|item| self.checked.contains(&item.root))
+            .cloned()
+            .collect();
+        if targets.is_empty() {
+            return;
+        }
+        self.busy = true;
+        self.error = None;
+        self.headline = "Removing…".to_string();
+        let tx = self.tx.clone();
+        let waker = Arc::clone(&self.waker);
+        thread::spawn(move || {
+            let mut removed = Vec::new();
+            let mut errors = Vec::new();
+            match home_dir() {
+                Ok(home) => {
+                    for item in &targets {
+                        match remove(&home, item) {
+                            Ok(()) => removed.push(item.version.to_string()),
+                            Err(err) => errors.push(err),
+                        }
+                    }
+                }
+                Err(err) => errors.push(err),
+            }
+            let _ = tx.send(Event::Removed { removed, errors });
+            waker.wake();
+        });
+    }
+
     fn remember_local(&mut self) {
         let found = home_dir().ok().and_then(|home| detect(&home));
         self.installed_label = found.as_ref().map(|item| item.version.to_string());
@@ -404,6 +468,21 @@ impl Launcher {
                         self.sweep_old(false);
                     }
                     self.follow_up_check();
+                }
+                Event::Removed { removed, errors } => {
+                    self.busy = false;
+                    self.headline = match removed.len() {
+                        0 => "Nothing was removed.".to_string(),
+                        1 => "Removed 1 copy of SolidCraft.".to_string(),
+                        count => format!("Removed {count} copies of SolidCraft."),
+                    };
+                    self.error = (!errors.is_empty()).then(|| errors.join("\n"));
+                    self.checked.clear();
+                    self.refresh_installs();
+                    self.remember_local();
+                    // What is installed decides what an update downloads, so the status
+                    // line is no longer true once a copy has gone.
+                    self.spawn_check();
                 }
                 Event::Progress { received, total } => {
                     self.progress = Some((received, total));
@@ -798,6 +877,21 @@ fn draw(ctx: &egui::Context, launcher: &mut Launcher) -> bool {
                             launcher.headline = "Checking GitHub for SolidCraft…".to_string();
                             launcher.spawn_check();
                         }
+                        if ui
+                            .add_enabled(
+                                !launcher.busy,
+                                egui::Button::new("Manage…").selected(launcher.manage_open),
+                            )
+                            .on_hover_text(
+                                "See and remove the copies of SolidCraft on this computer",
+                            )
+                            .clicked()
+                        {
+                            launcher.manage_open = !launcher.manage_open;
+                            if launcher.manage_open {
+                                launcher.refresh_installs();
+                            }
+                        }
                         let options_button =
                             ui.add(egui::Button::new("Options").selected(launcher.options_open));
                         options_rect = options_button.rect;
@@ -821,10 +915,125 @@ fn draw(ctx: &egui::Context, launcher: &mut Launcher) -> bool {
     {
         launcher.options_open = false;
     }
+    if launcher.manage_open {
+        show_manage(ctx, launcher);
+    }
     if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
         launcher.options_open = false;
+        launcher.manage_open = false;
     }
     close
+}
+
+/// The Manage copies sheet: everything installed, and a way to remove it.
+///
+/// A copy can be removed while it is the one in use. That is the point: without it
+/// someone who installed the tarball cannot move to the AppImage until a new release
+/// comes out, because an update keeps the format already there.
+fn show_manage(ctx: &egui::Context, launcher: &mut Launcher) {
+    let mut open = true;
+    egui::Window::new("SolidCraft on this computer")
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(420.0)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            if launcher.manage.items.is_empty() {
+                ui.label("No SolidCraft was found on this computer.");
+                return;
+            }
+            let mut toggles: Vec<(std::path::PathBuf, bool)> = Vec::new();
+            for item in &launcher.manage.items {
+                ui.horizontal(|ui| {
+                    let mut ticked = launcher.checked.contains(&item.root);
+                    // A copy this launcher cannot remove is still listed, so the window
+                    // tells the truth about the machine, but it cannot be ticked.
+                    if ui
+                        .add_enabled(
+                            item.removable() && !launcher.busy,
+                            egui::Checkbox::new(&mut ticked, item.label()),
+                        )
+                        .changed()
+                    {
+                        toggles.push((item.root.clone(), ticked));
+                    }
+                    if launcher.manage.is_active(item) {
+                        ui.label(
+                            egui::RichText::new("in use")
+                                .small()
+                                .color(egui::Color32::from_rgb(0x8a, 0xb4, 0xf8)),
+                        );
+                    }
+                });
+                ui.label(
+                    egui::RichText::new(item.root.display().to_string())
+                        .small()
+                        .color(egui::Color32::from_gray(0x9a)),
+                );
+                if !item.removable() {
+                    ui.label(
+                        egui::RichText::new("Remove this one the way it was installed.")
+                            .small()
+                            .color(egui::Color32::from_gray(0x9a)),
+                    );
+                }
+                ui.add_space(4.0);
+            }
+            for (root, ticked) in toggles {
+                if ticked {
+                    launcher.checked.insert(root);
+                } else {
+                    launcher.checked.remove(&root);
+                }
+            }
+            ui.separator();
+            let ticked = launcher.checked.len();
+            // Removing the copy in use is allowed, but it should not be a surprise.
+            let removing_active = launcher.manage.items.iter().any(|item| {
+                launcher.checked.contains(&item.root) && launcher.manage.is_active(item)
+            });
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        ticked > 0 && !launcher.busy,
+                        egui::Button::new(match ticked {
+                            1 => "Delete 1 copy".to_string(),
+                            count => format!("Delete {count} copies"),
+                        }),
+                    )
+                    .clicked()
+                {
+                    launcher.spawn_remove();
+                }
+                if ui.button("Close").clicked() {
+                    launcher.manage_open = false;
+                }
+            });
+            if removing_active {
+                ui.label(
+                    egui::RichText::new(
+                        "This includes the copy SolidCraft opens from. Install again \
+                         afterwards to get it back.",
+                    )
+                    .small()
+                    .color(egui::Color32::from_rgb(0xff, 0xc1, 0x07)),
+                );
+            }
+            if launcher.manage.items.iter().any(|item| !item.removable()) {
+                ui.label(
+                    egui::RichText::new(
+                        "A copy installed by a package manager or Flatpak is listed but \
+                         not removed from here.",
+                    )
+                    .small()
+                    .color(egui::Color32::from_gray(0x9a)),
+                );
+            }
+        });
+    if !open {
+        launcher.manage_open = false;
+    }
 }
 
 /// Options sit to the right of the status text, above the SHA-256 line.

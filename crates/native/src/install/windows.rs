@@ -24,7 +24,7 @@ use std::process::{Command, Stdio};
 use semver::Version;
 use solid_launcher_core::PackageKind;
 
-use super::{portable, Installed, Origin, RemovedCopies};
+use super::{portable, Installed, Installs, Origin, RemovedCopies};
 
 /// The portable layout keeps one directory per version.
 pub(super) const KEEPS_OLD_VERSIONS: bool = true;
@@ -209,6 +209,59 @@ pub(super) fn remove_old_copies(home: &Path) -> RemovedCopies {
         };
     }
     portable::remove_old(&root)
+}
+
+/// Every SolidCraft on this machine: the portable copies, or the one the MSI installed.
+pub(super) fn list(home: &Path) -> Installs {
+    let root = root(home);
+    let mut items = portable::list(&root);
+    // An MSI install is not under `root`, so it is added from the marker that records it.
+    if let Some(Method::Msi { version, exe }) = read_method(&root) {
+        if exe.is_file() {
+            items.push(Installed {
+                version,
+                root: exe.parent().map(Path::to_path_buf).unwrap_or_default(),
+                binary: exe,
+                origin: Origin::Launcher,
+            });
+        }
+    }
+    Installs {
+        items,
+        active: detect(home).map(|found| found.root),
+    }
+}
+
+/// Delete one portable copy. An MSI install belongs to Windows.
+pub(super) fn remove(home: &Path, item: &Installed) -> Result<(), String> {
+    let root = root(home);
+    if let Some(Method::Msi { exe, .. }) = read_method(&root) {
+        if exe.parent() == Some(item.root.as_path()) {
+            return Err(
+                "SolidCraft was installed with the Windows installer. Remove it from \
+                 Settings, under Apps, so Windows forgets it too."
+                    .to_string(),
+            );
+        }
+    }
+    // Only inside the folder this launcher owns: a path from anywhere else is not ours
+    // to delete, however it reached us.
+    if item.root.parent() != Some(root.as_path()) {
+        return Err(format!(
+            "{} is outside {}, so SolidLauncher will not remove it",
+            item.root.display(),
+            root.display()
+        ));
+    }
+    let was_active = detect(home).is_some_and(|active| active.root == item.root);
+    std::fs::remove_dir_all(&item.root)
+        .map_err(|err| format!("could not remove {} ({err})", item.root.display()))?;
+    if was_active {
+        // `current` named the copy that has just gone; leaving it would make `detect`
+        // report a version that is not there.
+        let _ = std::fs::remove_file(root.join(portable::CURRENT));
+    }
+    Ok(())
 }
 
 enum Method {

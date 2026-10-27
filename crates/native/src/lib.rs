@@ -21,8 +21,8 @@ mod shortcut;
 
 pub use http::{check_status, install_latest, Status};
 pub use install::{
-    detect, home_dir, install_archive, keeps_old_versions, launch, remove_old_copies, Installed,
-    Origin, RemovedCopies,
+    detect, home_dir, install_archive, keeps_old_versions, launch, list, remove, remove_old_copies,
+    Installed, Installs, Origin, RemovedCopies,
 };
 #[cfg(windows)]
 pub use shortcut::write_shortcut;
