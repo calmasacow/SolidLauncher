@@ -768,6 +768,14 @@ const WINDOW_FILL: egui::Color32 = egui::Color32::from_rgb(0x18, 0x1c, 0x24);
 
 const BANNER_PNG: &[u8] = include_bytes!("../../../assets/window-banner.png");
 
+/// Whether the system puts a title bar with a close button above the window.
+///
+/// Windows and macOS always do, and the launcher's own title row only repeated the title
+/// and offered a second button that did exactly what the first one does. A Linux or BSD
+/// desktop may draw nothing at all — a tiling compositor usually does not — so the row
+/// stays there, or the window would have no way to be put away but the tray menu.
+const HAS_SYSTEM_TITLE_BAR: bool = cfg!(any(target_os = "windows", target_os = "macos"));
+
 /// Where the status line starts in the 600×400 window. The mark above it ends near y = 194.
 const STATUS_TOP: f32 = 224.0;
 
@@ -786,22 +794,24 @@ fn draw(ctx: &egui::Context, launcher: &mut Launcher) -> bool {
             paint_banner(ui, &mut launcher.banner);
             panel = ui.max_rect();
             ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.add_space(16.0);
-                ui.label(egui::RichText::new("SolidLauncher").size(15.0));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add_space(8.0);
-                    let button = egui::Button::new(egui::RichText::new("×").size(16.0))
-                        .min_size(egui::vec2(32.0, 24.0));
-                    if ui
-                        .add(button)
-                        .on_hover_text("Close the window. SolidLauncher stays in the bar.")
-                        .clicked()
-                    {
-                        close = true;
-                    }
+            if !HAS_SYSTEM_TITLE_BAR {
+                ui.horizontal(|ui| {
+                    ui.add_space(16.0);
+                    ui.label(egui::RichText::new("SolidLauncher").size(15.0));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_space(8.0);
+                        let button = egui::Button::new(egui::RichText::new("×").size(16.0))
+                            .min_size(egui::vec2(32.0, 24.0));
+                        if ui
+                            .add(button)
+                            .on_hover_text("Close the window. SolidLauncher stays in the bar.")
+                            .clicked()
+                        {
+                            close = true;
+                        }
+                    });
                 });
-            });
+            }
             let cursor = ui.cursor().min.y;
             let status_y = panel.min.y + STATUS_TOP;
             if status_y > cursor {

@@ -54,5 +54,11 @@ tray-icon = "0.25"
 [target.'cfg(any(target_os = "linux", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd", target_os = "dragonfly"))'.dependencies]
 tray-icon = { version = "0.25", default-features = false, features = ["ksni"] }
 
+# Not under `cfg(windows)`: build dependencies are resolved for the machine doing the
+# building, so gating on that would leave out the one case that needs it most — building a
+# Windows executable from somewhere else. build.rs checks the target instead.
+[build-dependencies]
+winresource = "0.1"
+
 [lints]
 workspace = true
