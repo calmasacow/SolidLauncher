@@ -3305,7 +3305,7 @@ dependencies = [
 
 [[package]]
 name = "solid-launcher"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "eframe",
  "getrandom 0.3.4",
@@ -3320,7 +3320,7 @@ dependencies = [
 
 [[package]]
 name = "solid-launcher-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "semver",
  "serde_json",
@@ -3328,7 +3328,7 @@ dependencies = [
 
 [[package]]
 name = "solid-launcher-native"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "dirs 5.0.1",
  "flate2",
