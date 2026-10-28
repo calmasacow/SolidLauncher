@@ -8,6 +8,7 @@ use tray_icon::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIc
 /// StatusNotifierItem id. The default is "<pid>-<n>", which the bar would pin as a number.
 pub const TRAY_ID: &str = "solid-launcher";
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TrayAction {
     Toggle,
     Show,
@@ -45,7 +46,7 @@ impl Tray {
     /// `wake` repaints the window, or the tray loop when there is no window.
     /// `on_quit` runs as soon as Quit is picked, in case that window never gets another frame.
     pub fn new(
-        wake: impl Fn() + Send + Sync + Clone + 'static,
+        wake: impl Fn(TrayAction) + Send + Sync + Clone + 'static,
         on_quit: impl Fn() + Send + Sync + 'static,
     ) -> Result<Self, String> {
         let show = MenuItem::new("Show SolidLauncher", true, None);
@@ -83,7 +84,7 @@ impl Tray {
                     on_quit();
                 }
                 let _ = tx.send(action);
-                wake();
+                wake(action);
             }));
         }
         TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
@@ -94,7 +95,7 @@ impl Tray {
             } = event
             {
                 let _ = tx.send(TrayAction::Toggle);
-                wake();
+                wake(TrayAction::Toggle);
             }
         }));
         Ok(Self {

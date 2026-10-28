@@ -37,7 +37,7 @@ use std::time::Duration;
 use eframe::egui;
 use solid_launcher_native::{
     check_status, detect, home_dir, install_latest, keeps_old_versions, launch, list, remove,
-    remove_old_copies, Installed, Installs, Status,
+    remove_old_copies, Installed, Installs, PackageKind, Status,
 };
 
 fn main() -> eframe::Result<()> {
@@ -92,10 +92,14 @@ fn run_gui(hidden: bool) -> eframe::Result<()> {
         window: Mutex::new(None),
         wake_tx,
         quit_pending: AtomicBool::new(false),
+        concealed: AtomicBool::new(false),
+        announced: Mutex::new(None),
+        events: Mutex::new(None),
+        place: place::Place::start(),
     });
     let mut launcher = match instance::claim({
         let waker = Arc::clone(&waker);
-        move || waker.wake()
+        move || waker.wake_for_show()
     }) {
         instance::Claim::Secondary => return Ok(()),
         instance::Claim::Primary { shows } => Launcher::new(Arc::clone(&waker), shows),
@@ -108,7 +112,24 @@ fn run_gui(hidden: bool) -> eframe::Result<()> {
     let tray_waker = Arc::clone(&waker);
     let quit_waker = Arc::clone(&waker);
     match tray::Tray::new(
-        move || tray_waker.wake(),
+        move |action| match action {
+            // Show moves the window back onto a monitor before the repaint. The
+            // repaint is a buffer swap, and a swap on the hidden workspace never
+            // returns, which is the not-responding dialog.
+            tray::TrayAction::Show | tray::TrayAction::Toggle => tray_waker.wake_for_show(),
+            tray::TrayAction::Check => {
+                if tray_waker.is_concealed() {
+                    tray_waker.spawn_hidden_check();
+                } else {
+                    tray_waker.wake();
+                }
+            }
+            tray::TrayAction::Quit => {
+                if !tray_waker.is_concealed() {
+                    tray_waker.wake();
+                }
+            }
+        },
         move || Waker::quit_from_tray(&quit_waker),
     ) {
         Ok(icon) => launcher.tray = Some(icon),
@@ -159,9 +180,13 @@ fn native_options() -> eframe::NativeOptions {
         viewport = viewport.with_icon(icon);
     }
     // `run_and_return` makes closing the window come back here, so the bar icon stays.
+    // Vsync waits inside the buffer swap. On Wayland that wait does not finish while
+    // the window is on a workspace Hyprland is not showing, and this thread then
+    // misses the pings that would have kept the not-responding dialog away.
     eframe::NativeOptions {
         viewport,
         run_and_return: true,
+        vsync: false,
         ..Default::default()
     }
 }
@@ -175,10 +200,42 @@ struct Waker {
     window: Mutex<Option<egui::Context>>,
     wake_tx: SyncSender<()>,
     quit_pending: AtomicBool,
+    /// The window is on the hidden workspace. A repaint there swaps a frame Hyprland
+    /// will not present, and the window thread stops answering pings.
+    concealed: AtomicBool,
+    /// Latest version already announced this session, so a hidden check and the next
+    /// time the window draws do not each post a notification.
+    announced: Mutex<Option<String>>,
+    /// Set once the window exists, so a check can run while nothing is being painted.
+    events: Mutex<Option<mpsc::Sender<Event>>>,
+    place: place::Place,
+}
+
+/// A hidden window must not be painted. Hyprland still pings it, and the paint is
+/// what misses those pings.
+fn should_paint(concealed: bool) -> bool {
+    !concealed
 }
 
 impl Waker {
     fn wake(&self) {
+        if should_paint(self.is_concealed()) {
+            self.repaint();
+        }
+        let _ = self.wake_tx.try_send(());
+    }
+
+    /// Bring a hidden window back onto a monitor, then paint. The move finishes
+    /// before the paint, and it runs on this caller, which is not the window thread.
+    fn wake_for_show(&self) {
+        if self.is_concealed() {
+            self.place.reveal_wait();
+        }
+        self.repaint();
+        let _ = self.wake_tx.try_send(());
+    }
+
+    fn repaint(&self) {
         if let Some(ctx) = self
             .window
             .lock()
@@ -187,7 +244,46 @@ impl Waker {
         {
             ctx.request_repaint();
         }
-        let _ = self.wake_tx.try_send(());
+    }
+
+    fn set_concealed(&self, concealed: bool) {
+        self.concealed.store(concealed, Ordering::SeqCst);
+    }
+
+    fn is_concealed(&self) -> bool {
+        self.concealed.load(Ordering::SeqCst)
+    }
+
+    fn set_events(&self, tx: mpsc::Sender<Event>) {
+        *self.events.lock().unwrap_or_else(PoisonError::into_inner) = Some(tx);
+    }
+
+    /// Check without painting. Used when the window is hidden, so a result can
+    /// still notify, and the window applies it the next time it is shown.
+    fn spawn_hidden_check(self: &Arc<Self>) {
+        let preferred = settings::Settings::load().0.method.preferred();
+        let tx = self
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        let Some(tx) = tx else {
+            return;
+        };
+        spawn_check(tx, Arc::clone(self), preferred);
+    }
+
+    fn announce(&self, status: &Status) {
+        let mut announced = self
+            .announced
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let Some((latest, installed)) = announce_version(status, announced.as_deref()) else {
+            return;
+        };
+        *announced = Some(latest.clone());
+        drop(announced);
+        notify::update_available(&latest, &installed);
     }
 
     fn set_window(&self, ctx: Option<egui::Context>) {
@@ -295,8 +391,6 @@ struct Launcher {
     sweep_after_install: bool,
     /// Window artwork. Loaded once, then painted behind the controls.
     banner: Option<egui::TextureHandle>,
-    /// Latest version already announced this session, so the hourly check does not repeat it.
-    announced: Option<String>,
     /// An hourly check came in while a check or install was already running.
     check_when_idle: bool,
 }
@@ -312,7 +406,8 @@ impl Launcher {
         };
         let (settings, settings_note) = settings::Settings::load();
         let autostart_note = autostart::apply(&settings).err();
-        let place = place::Place::start();
+        let place = waker.place.clone();
+        waker.set_events(tx.clone());
         let app = Self {
             waker,
             tx,
@@ -336,7 +431,6 @@ impl Launcher {
             place,
             sweep_after_install: false,
             banner: None,
-            announced: None,
             check_when_idle: false,
         };
         app.spawn_check();
@@ -345,17 +439,11 @@ impl Launcher {
     }
 
     fn spawn_check(&self) {
-        let tx = self.tx.clone();
-        let waker = Arc::clone(&self.waker);
-        let preferred = self.settings.method.preferred();
-        thread::spawn(move || {
-            let event = match check_status(preferred) {
-                Ok(status) => Event::Checked(status),
-                Err(err) => Event::Failed(err),
-            };
-            let _ = tx.send(event);
-            waker.wake();
-        });
+        spawn_check(
+            self.tx.clone(),
+            Arc::clone(&self.waker),
+            self.settings.method.preferred(),
+        );
     }
 
     fn spawn_install(&self) {
@@ -456,12 +544,8 @@ impl Launcher {
                     self.error = None;
                     self.headline = headline(&status);
                     self.installed_label = status.installed.clone();
-                    if let Some((latest, installed)) =
-                        announce_version(&status, self.announced.as_deref())
-                    {
-                        self.announced = Some(latest.clone());
-                        notify::update_available(&latest, &installed);
-                    }
+                    // A check that finished while the window was hidden already notified.
+                    self.waker.announce(&status);
                     self.status = Some(status);
                     self.remember_local();
                     if std::mem::take(&mut self.sweep_after_install) {
@@ -706,6 +790,7 @@ impl Shell<'_> {
 
     fn reveal(&mut self, ctx: &egui::Context) {
         self.launcher.concealed = false;
+        self.launcher.waker.set_concealed(false);
         self.launcher.place.reveal();
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
@@ -719,6 +804,7 @@ impl Shell<'_> {
     /// event loop would then exit with it still on screen.
     fn conceal(&mut self, ctx: &egui::Context) {
         self.launcher.concealed = true;
+        self.launcher.waker.set_concealed(true);
         self.launcher.closed_to_tray = false;
         if self.launcher.place.hides_the_window() {
             self.launcher.place.conceal();
@@ -742,6 +828,8 @@ impl Shell<'_> {
 
 impl eframe::App for Shell<'_> {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Count this frame before it can swap, so a hide can tell when painting has stopped.
+        self.launcher.place.begin_frame();
         self.launcher.drain_events();
         let requests = self.launcher.collect_requests();
         self.launcher.apply_check(&requests);
@@ -754,10 +842,14 @@ impl eframe::App for Shell<'_> {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             }
         }
-        if self.launcher.busy {
+        // Painting while hidden blocks in the buffer swap: Hyprland is not showing that
+        // workspace, so it never sends the frame this thread is waiting on, and the
+        // not-responding dialog appears about five seconds later.
+        let hidden = self.launcher.waker.is_concealed();
+        if self.launcher.busy && should_paint(hidden) {
             ctx.request_repaint_after(Duration::from_millis(100));
         }
-        if draw(ctx, self.launcher) {
+        if should_paint(hidden) && draw(ctx, self.launcher) {
             self.put_away(ctx);
         }
     }
@@ -1171,13 +1263,36 @@ fn banner_image() -> Option<egui::ColorImage> {
 
 const CHECK_EVERY: Duration = Duration::from_secs(60 * 60);
 
+fn spawn_check(tx: mpsc::Sender<Event>, waker: Arc<Waker>, preferred: Option<PackageKind>) {
+    thread::spawn(move || {
+        let event = match check_status(preferred) {
+            Ok(status) => {
+                // The window applies this when it is next drawn. Notify now if that
+                // will not be soon, so a hidden launcher still reports an update.
+                if waker.is_concealed() {
+                    waker.announce(&status);
+                }
+                Event::Checked(status)
+            }
+            Err(err) => Event::Failed(err),
+        };
+        let _ = tx.send(event);
+        waker.wake();
+    });
+}
+
 fn start_hourly_checks(tx: std::sync::mpsc::Sender<Event>, waker: Arc<Waker>) {
     let started = thread::Builder::new()
         .name("solid-launcher-hourly".to_string())
         .spawn(move || loop {
             thread::sleep(CHECK_EVERY);
-            let _ = tx.send(Event::Hourly);
-            waker.wake();
+            if waker.is_concealed() {
+                // Painting to apply the check would block on the hidden workspace.
+                waker.spawn_hidden_check();
+            } else {
+                let _ = tx.send(Event::Hourly);
+                waker.wake();
+            }
         });
     if started.is_err() {
         eprintln!("SolidLauncher: the hourly update check did not start");
@@ -1228,7 +1343,9 @@ fn style(cc: &eframe::CreationContext<'_>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{announce_version, start_in_tray, tray_step, Request, Status, TrayStep};
+    use super::{
+        announce_version, should_paint, start_in_tray, tray_step, Request, Status, TrayStep,
+    };
 
     fn status(installed: Option<&str>, latest: &str, update: bool) -> Status {
         Status {
@@ -1253,6 +1370,12 @@ mod tests {
         assert!(announce_version(&found, Some("0.24.0")).is_none());
         assert!(announce_version(&status(Some("0.23.0"), "0.23.0", false), None).is_none());
         assert!(announce_version(&status(None, "0.24.0", true), None).is_none());
+    }
+
+    #[test]
+    fn a_hidden_window_is_not_painted() {
+        assert!(should_paint(false));
+        assert!(!should_paint(true));
     }
 
     #[test]
